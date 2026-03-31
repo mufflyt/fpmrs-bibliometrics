@@ -1,0 +1,26 @@
+# R
+.Rhistory
+.Rdata
+.RData
+.Rproj.user
+*.Rproj
+
+# Output artifacts
+output/
+figures/
+*.rds
+*.rda
+*.csv
+*.xlsx
+*.parquet
+
+# System
+.DS_Store
+Thumbs.db
+
+# Environment
+.Renviron
+.env
+renv/library/
+renv/staging/
+renv/local/
