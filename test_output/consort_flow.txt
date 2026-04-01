@@ -1,0 +1,12 @@
+CONSORT-STYLE RECORD FLOW
+========================================
+Records retrieved            : 479
+  - Excluded (year range)    : 8
+After year filter            : 471
+  - Excluded (non-English)   : 0
+After language filter        : 471
+  - Excluded (duplicates)    : 0
+----------------------------------------
+INCLUDED IN ANALYSIS         : 471
+
+Generated: 2026-04-01 02:57:07 UTC

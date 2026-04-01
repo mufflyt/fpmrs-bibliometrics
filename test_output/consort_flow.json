@@ -1,0 +1,30 @@
+{
+  "stage_1_retrieved": {
+    "n": 479,
+    "label": "Records retrieved from pubmed"
+  },
+  "excluded_year": {
+    "n": 8,
+    "label": "Excluded: outside 2020-2024"
+  },
+  "stage_2_year_filter": {
+    "n": 471,
+    "label": "Records after year filter"
+  },
+  "excluded_language": {
+    "n": 0,
+    "label": "Excluded: non-English"
+  },
+  "stage_3_lang_filter": {
+    "n": 471,
+    "label": "Records after language filter"
+  },
+  "excluded_dedup": {
+    "n": 0,
+    "label": "Excluded: duplicates (DOI/title-year)"
+  },
+  "stage_4_final": {
+    "n": 471,
+    "label": "Records included in analysis"
+  }
+}

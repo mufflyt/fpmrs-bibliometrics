@@ -1,0 +1,5 @@
+MESH TERM COVERAGE NOTE
+----------------------------------------
+Analysis year_start: 2020
+
+All key MeSH terms predate year_start. No gap.

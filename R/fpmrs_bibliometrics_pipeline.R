@@ -393,9 +393,10 @@ make_eras <- function(year_start, year_end) {
       limit   = 10000L,
       api_key = pubmed_api_key
     )
+    # pubmedR 0.0.3 uses $total_count (not $TotalCount)
+    .pm_total <- pubmed_api_response$total_count %||% pubmed_api_response$TotalCount %||% "unknown"
     .log_step(sprintf(
-      "[LOAD] PubMed API: %s total records available.",
-      pubmed_api_response$TotalCount
+      "[LOAD] PubMed API: %s total records available.", .pm_total
     ), verbose)
 
     pubmed_raw_df <- pubmedR::pmApi2df(pubmed_api_response)
@@ -404,11 +405,13 @@ make_eras <- function(year_start, year_end) {
       nrow(pubmed_raw_df), ncol(pubmed_raw_df)
     ), verbose)
 
-    bibliography_standardized <- bibliometrix::convert2df(
-      file     = pubmed_raw_df,
-      dbsource = "pubmed",
-      format   = "api"
-    )
+    # FIX: pmApi2df already produces bibliometrix-compatible columns (AU, TI, SO, etc.)
+    # convert2df is broken in bibliometrix 5.x with pubmedR 0.0.3 output —
+    # it tries to re-convert an already-converted df and fails with
+    # "arguments imply differing number of rows: 0, 1".
+    # Skip convert2df and use pmApi2df output directly.
+    bibliography_standardized <- pubmed_raw_df
+    bibliography_standardized$DB <- "PUBMED"
 
   } else if (data_source == "both") {
     # ---- Dual-database: PubMed API + WoS file, deduped and merged ----
@@ -417,12 +420,10 @@ make_eras <- function(year_start, year_end) {
     pubmed_both <- pubmedR::pmApiRequest(
       query = pubmed_query, limit = 10000L, api_key = pubmed_api_key
     )
-    .log_step(sprintf("[LOAD] PubMed: %s records available.",
-                      pubmed_both$TotalCount), verbose)
-    bib_pm_both <- bibliometrix::convert2df(
-      file = pubmedR::pmApi2df(pubmed_both),
-      dbsource = "pubmed", format = "api"
-    )
+    .pm_both_total <- pubmed_both$total_count %||% pubmed_both$TotalCount %||% "unknown"
+    .log_step(sprintf("[LOAD] PubMed: %s records available.", .pm_both_total), verbose)
+    bib_pm_both <- pubmedR::pmApi2df(pubmed_both)
+    bib_pm_both$DB <- "PUBMED"
     bib_wos_both <- bibliometrix::convert2df(
       file = file_path, dbsource = "wos", format = "plaintext"
     )
@@ -10609,6 +10610,10 @@ run_fpmrs_bibliometric_pipeline <- function(
   }
 
   .log_step("\n--- STEP 3: Core Bibliometric Analysis ---", verbose)
+  # Preload bibliometrix internal datasets that biblioAnalysis needs
+  # (dev version 5.2.1.9000 doesn't auto-load these in all contexts)
+  tryCatch(utils::data("countries", package = "bibliometrix", envir = .GlobalEnv), error = function(e) NULL)
+  tryCatch(utils::data("stop_words", package = "bibliometrix", envir = .GlobalEnv), error = function(e) NULL)
   bibliometric_summary_object <- bibliometrix::biblioAnalysis(
     bibliography_filtered,
     sep = ";"

@@ -1,0 +1,15 @@
+{
+  "search_timestamp_utc": "2026-04-01 02:57:07 UTC",
+  "data_source": "pubmed",
+  "pubmed_query": "pelvic floor[Title] AND 2022[PDAT]",
+  "wos_file_path": null,
+  "year_start": 2020,
+  "year_end": 2024,
+  "english_only": true,
+  "records": {
+    "retrieved": 479,
+    "after_year_filter": 471,
+    "after_lang_filter": 471,
+    "final_analysis_set": 471
+  }
+}
