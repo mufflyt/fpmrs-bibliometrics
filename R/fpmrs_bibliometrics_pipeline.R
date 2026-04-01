@@ -388,11 +388,29 @@ make_eras <- function(year_start, year_end) {
       "[LOAD] Query: %s", substr(pubmed_query, 1, 100)
     ), verbose)
 
-    pubmed_api_response <- pubmedR::pmApiRequest(
-      query   = pubmed_query,
-      limit   = 10000L,
-      api_key = pubmed_api_key
-    )
+    # Retry logic for PubMed API — large queries can timeout
+    pubmed_api_response <- NULL
+    for (.pm_attempt in 1:3) {
+      pubmed_api_response <- tryCatch(
+        pubmedR::pmApiRequest(
+          query   = pubmed_query,
+          limit   = 10000L,
+          api_key = pubmed_api_key
+        ),
+        error = function(e) {
+          .log_step(sprintf("[LOAD] PubMed attempt %d/3 failed: %s", .pm_attempt, e$message), verbose)
+          if (.pm_attempt < 3) {
+            .log_step("[LOAD] Waiting 10 seconds before retry...", verbose)
+            Sys.sleep(10)
+          }
+          NULL
+        }
+      )
+      if (!is.null(pubmed_api_response)) break
+    }
+    if (is.null(pubmed_api_response)) {
+      stop("[LOAD] PubMed API failed after 3 attempts. Check internet connection and query syntax.", call. = FALSE)
+    }
     # pubmedR 0.0.3 uses $total_count (not $TotalCount)
     .pm_total <- pubmed_api_response$total_count %||% pubmed_api_response$TotalCount %||% "unknown"
     .log_step(sprintf(
@@ -4179,7 +4197,11 @@ export_citespace_network <- function(
     yr_range <- range(bibliography$publication_year, na.rm = TRUE)
     eras     <- make_eras(yr_range[1L], yr_range[2L])
   }
-  assertthat::assert_that(is.list(eras) && length(eras) >= 2L)
+  if (!is.list(eras) || length(eras) < 2L) {
+    .log_step("[THEMATIC] Fewer than 2 eras — skipping thematic evolution (need wider year range).", verbose)
+    return(dplyr::tibble(era=character(), keyword=character(),
+                         n_papers=integer(), pct_of_era=numeric()))
+  }
   assertthat::assert_that(isTRUE(verbose) || isFALSE(verbose))
   .log_step("[THEMATIC] Computing thematic evolution across eras ...", verbose)
 
@@ -4409,7 +4431,10 @@ export_citespace_network <- function(
     yr_range <- range(bibliography$publication_year, na.rm = TRUE)
     eras     <- make_eras(yr_range[1L], yr_range[2L])
   }
-  assertthat::assert_that(is.list(eras) && length(eras) >= 2L)
+  if (!is.list(eras) || length(eras) < 2L) {
+    .log_step("[EVID EVOL] Fewer than 2 eras — skipping evidence evolution.", verbose)
+    return(dplyr::tibble(era=character(), level=character(), n=integer(), pct=numeric()))
+  }
   assertthat::assert_that(isTRUE(verbose) || isFALSE(verbose))
   .log_step("[EVID EVOL] Computing evidence pyramid by era ...", verbose)
 
