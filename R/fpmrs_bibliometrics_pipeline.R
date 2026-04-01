@@ -388,36 +388,80 @@ make_eras <- function(year_start, year_end) {
       "[LOAD] Query: %s", substr(pubmed_query, 1, 100)
     ), verbose)
 
-    # Retry logic for PubMed API — large queries can timeout
-    pubmed_api_response <- NULL
-    for (.pm_attempt in 1:3) {
-      pubmed_api_response <- tryCatch(
-        pubmedR::pmApiRequest(
-          query   = pubmed_query,
-          limit   = 10000L,
-          api_key = pubmed_api_key
-        ),
-        error = function(e) {
-          .log_step(sprintf("[LOAD] PubMed attempt %d/3 failed: %s", .pm_attempt, e$message), verbose)
-          if (.pm_attempt < 3) {
-            .log_step("[LOAD] Waiting 10 seconds before retry...", verbose)
-            Sys.sleep(10)
-          }
-          NULL
-        }
-      )
-      if (!is.null(pubmed_api_response)) break
-    }
-    if (is.null(pubmed_api_response)) {
-      stop("[LOAD] PubMed API failed after 3 attempts. Check internet connection and query syntax.", call. = FALSE)
-    }
-    # pubmedR 0.0.3 uses $total_count (not $TotalCount)
-    .pm_total <- pubmed_api_response$total_count %||% pubmed_api_response$TotalCount %||% "unknown"
-    .log_step(sprintf(
-      "[LOAD] PubMed API: %s total records available.", .pm_total
-    ), verbose)
+    # Split query by year ranges to overcome PubMed's 10K record limit.
+    # Without splitting, pmApiRequest returns only the most recent 10K,
+    # silently dropping all earlier publications.
+    .year_ranges <- list(
+      c(1975L, 2000L),
+      c(2001L, 2010L),
+      c(2011L, 2017L),
+      c(2018L, 2021L),
+      c(2022L, as.integer(format(Sys.Date(), "%Y")))
+    )
 
-    pubmed_raw_df <- pubmedR::pmApi2df(pubmed_api_response)
+    all_chunks <- list()
+    .total_available <- 0L
+
+    for (.yr in .year_ranges) {
+      .yr_query <- sprintf("(%s) AND %d:%d[PDAT]", pubmed_query, .yr[1], .yr[2])
+      .log_step(sprintf("[LOAD] Fetching %d-%d ...", .yr[1], .yr[2]), verbose)
+
+      .chunk_response <- NULL
+      for (.pm_attempt in 1:3) {
+        .chunk_response <- tryCatch(
+          pubmedR::pmApiRequest(
+            query   = .yr_query,
+            limit   = 10000L,
+            api_key = pubmed_api_key
+          ),
+          error = function(e) {
+            .log_step(sprintf("[LOAD] Attempt %d/3 for %d-%d failed: %s",
+                              .pm_attempt, .yr[1], .yr[2], e$message), verbose)
+            if (.pm_attempt < 3) Sys.sleep(10)
+            NULL
+          }
+        )
+        if (!is.null(.chunk_response)) break
+      }
+
+      if (!is.null(.chunk_response)) {
+        .chunk_total <- .chunk_response$total_count %||% .chunk_response$TotalCount %||% 0L
+        .total_available <- .total_available + as.integer(.chunk_total)
+        .chunk_df <- tryCatch(pubmedR::pmApi2df(.chunk_response), error = function(e) NULL)
+        if (!is.null(.chunk_df) && nrow(.chunk_df) > 0) {
+          all_chunks <- c(all_chunks, list(.chunk_df))
+          .log_step(sprintf("[LOAD]   %d-%d: %d records fetched (%s available)",
+                            .yr[1], .yr[2], nrow(.chunk_df), .chunk_total), verbose)
+        } else {
+          .log_step(sprintf("[LOAD]   %d-%d: 0 records converted", .yr[1], .yr[2]), verbose)
+        }
+      } else {
+        .log_step(sprintf("[LOAD]   %d-%d: FAILED after 3 attempts", .yr[1], .yr[2]), verbose)
+      }
+
+      # Rate limit courtesy
+      Sys.sleep(2)
+    }
+
+    if (length(all_chunks) == 0) {
+      stop("[LOAD] No records retrieved from any year range.", call. = FALSE)
+    }
+
+    pubmed_raw_df <- dplyr::bind_rows(all_chunks)
+    # Deduplicate by PMID (overlapping year ranges can return same record)
+    if ("PMID" %in% names(pubmed_raw_df)) {
+      .n_before <- nrow(pubmed_raw_df)
+      pubmed_raw_df <- pubmed_raw_df[!duplicated(pubmed_raw_df$PMID), ]
+      .n_deduped <- .n_before - nrow(pubmed_raw_df)
+      if (.n_deduped > 0) {
+        .log_step(sprintf("[LOAD] Deduplicated %d records by PMID", .n_deduped), verbose)
+      }
+    }
+
+    .log_step(sprintf(
+      "[LOAD] PubMed API: %d total available, %d fetched across %d year ranges",
+      .total_available, nrow(pubmed_raw_df), length(.year_ranges)
+    ), verbose)
     .log_step(sprintf(
       "[LOAD] Converted PubMed response: %d rows x %d cols",
       nrow(pubmed_raw_df), ncol(pubmed_raw_df)
