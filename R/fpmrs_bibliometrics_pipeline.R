@@ -8957,15 +8957,15 @@ plot_annual_publications <- function(
       expand = ggplot2::expansion(mult = c(0, 0.08))
     ) +
     ggplot2::labs(
-      title    = "Annual FPMRS Publication Volume",
+      title    = "Annual URPS Publication Volume",
       subtitle = sprintf(
-        "%d-%d  |  LOESS trend with 95%% CI shown in red",
+        "%d\u2013%d  |  LOESS trend with 95%% CI shown in red",
         year_start, year_end
       ),
       x       = "Publication Year",
       y       = "Number of Publications",
       caption = paste0(
-        "Source: Bibliometric analysis of FPMRS literature. ",
+        "Source: Bibliometric analysis of URPS literature. ",
         "LOESS = locally estimated scatterplot smoothing."
       )
     ) +
@@ -9400,7 +9400,7 @@ plot_journal_trends <- function(
       expand = ggplot2::expansion(mult = c(0, 0.06))
     ) +
     ggplot2::labs(
-      title    = "Journal Dominance in FPMRS Literature Over Time",
+      title    = "Journal Dominance in URPS Literature Over Time",
       subtitle = sprintf(
         "Top %d journals by total publication volume (stacked)",
         top_n_journals
