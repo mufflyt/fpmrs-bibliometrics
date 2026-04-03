@@ -80,10 +80,11 @@
       if (is.null(oa_data) || nrow(oa_data) == 0) return(NULL)
 
       # Extract PMID from ids column
+      # ids is a named character vector (not a list), so use ["pmid"] not $pmid
       oa_data$pmid_clean <- vapply(oa_data$ids, function(ids) {
-        pm <- ids$pmid
-        if (is.null(pm) || length(pm) == 0) return(NA_character_)
-        gsub("https://pubmed.ncbi.nlm.nih.gov/", "", as.character(pm[1]))
+        pm <- ids["pmid"]
+        if (is.na(pm) || is.null(pm) || !nzchar(pm)) return(NA_character_)
+        gsub("https://pubmed.ncbi.nlm.nih.gov/", "", as.character(pm))
       }, character(1))
 
       # Extract first-author country
@@ -99,6 +100,7 @@
 
       oa_data[, c("pmid_clean", "cited_by_count", "first_author_country", "is_oa", "fwci")]
     }, error = function(e) {
+      if (i <= 3) .log_step(sprintf("[OPENALEX] Batch %d error: %s", i, e$message), verbose)
       NULL
     })
 
