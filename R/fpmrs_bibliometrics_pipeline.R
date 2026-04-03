@@ -1051,14 +1051,31 @@ make_eras <- function(year_start, year_end) {
     ))
   }
 
-  top_journals_vector <- bibliography_filtered |>
+  # Merge renamed journals so they appear as one continuous series.
+  # "Female Pelvic Medicine & Reconstructive Surgery" was renamed to
+  # "Urogynecology" in 2022. Similarly for IUJ name variants.
+  .journal_renames <- c(
+    "UROGYNECOLOGY" = "FEMALE PELVIC MEDICINE & RECONSTRUCTIVE SURGERY",
+    "UROGYNECOLOGY (PHILADELPHIA, PA.)" = "FEMALE PELVIC MEDICINE & RECONSTRUCTIVE SURGERY",
+    "INTERNATIONAL UROGYNECOLOGY JOURNAL AND PELVIC FLOOR DYSFUNCTION" = "INTERNATIONAL UROGYNECOLOGY JOURNAL"
+  )
+  bib_merged_journals <- bibliography_filtered |>
+    dplyr::mutate(
+      SO = dplyr::if_else(
+        toupper(.data$SO) %in% names(.journal_renames),
+        .journal_renames[toupper(.data$SO)],
+        .data$SO
+      )
+    )
+
+  top_journals_vector <- bib_merged_journals |>
     dplyr::filter(!is.na(.data$SO)) |>
     dplyr::count(.data$SO, name = "total_articles") |>
     dplyr::arrange(dplyr::desc(.data$total_articles)) |>
     dplyr::slice_head(n = top_n_journals) |>
     dplyr::pull(.data$SO)
 
-  journal_trends_table <- bibliography_filtered |>
+  journal_trends_table <- bib_merged_journals |>
     dplyr::filter(
       !is.na(.data$SO),
       .data$SO %in% top_journals_vector
@@ -1861,7 +1878,13 @@ get_subspecialty_pubmed_query <- function(subspecialty_key) {
       "\"sacrocolpopexy\"[Title/Abstract] OR ",
       "\"suburethral sling\"[Title/Abstract] OR ",
       "\"pubovaginal sling\"[Title/Abstract] OR ",
-      "\"colposuspension\"[Title/Abstract]",
+      "\"colposuspension\"[Title/Abstract] OR ",
+      # Journal name search: captures all articles published in the specialty journal
+      # regardless of title/abstract content. The journal was renamed in 2022:
+      #   "Female Pelvic Medicine & Reconstructive Surgery" (2015-2021)
+      #   "Urogynecology" (2022-present)
+      "\"Female Pelvic Medicine and Reconstructive Surgery\"[Journal] OR ",
+      "\"Urogynecology\"[Journal]",
       ")"
     ),
 
