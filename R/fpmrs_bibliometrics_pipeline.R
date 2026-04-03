@@ -7766,7 +7766,7 @@ compute_nomenclature_transition <- function(
         name = NULL
       ) +
       ggplot2::labs(
-        title    = "FPMRS \u2192 URPS Nomenclature Transition",
+        title    = "FPMRS to URPS Nomenclature Transition",
         subtitle = sprintf(
           "Annual title/abstract mentions | Official rename: Jan 1, %d",
           focal_year),
@@ -9856,7 +9856,7 @@ plot_thematic_evolution <- function(
       expand = ggplot2::expansion(add = c(1.6, 1.6))
     ) +
     ggplot2::labs(
-      title    = "Thematic Evolution of FPMRS Literature",
+      title    = "Thematic Evolution of URPS Literature",
       subtitle = sprintf(
         "Top %d keywords ranked by prevalence within each era | Rank 1 = most frequent",
         top_n
@@ -10101,7 +10101,7 @@ plot_evidence_evolution <- function(
 #' @export
 plot_equity_breakdown <- function(
     equity_metrics_input,
-    subspecialty_label = "FPMRS",
+    subspecialty_label = "URPS",
     verbose            = TRUE
 ) {
   assertthat::assert_that(
@@ -10309,7 +10309,7 @@ plot_equity_breakdown <- function(
 #' @export
 plot_disruption_index_distribution <- function(
     disruption_index_data,
-    subspecialty_label = "FPMRS",
+    subspecialty_label = "URPS",
     n_bins             = 40L,
     verbose            = TRUE
 ) {
@@ -10507,7 +10507,7 @@ plot_citation_metrics_by_era <- function(
       "2014\u20132018" = c(2014L, 2018L),
       "2019+"          = c(2019L, 2100L)
     ),
-    subspecialty_label = "FPMRS",
+    subspecialty_label = "URPS",
     verbose            = TRUE
 ) {
   assertthat::assert_that(is.data.frame(bibliography))
@@ -13080,7 +13080,7 @@ plot_citation_parentage <- function(parentage_result, verbose = TRUE) {
       expand = ggplot2::expansion(mult = c(0, 0.03))
     ) +
     ggplot2::labs(
-      title    = "Citation Parentage: Where Does FPMRS Cite From?",
+      title    = "Citation Parentage: Where Does URPS Cite From?",
       subtitle = paste(
         "Distribution of cited journals by research domain across eras.",
         "A shift toward Rehabilitation/PT signals a translational turn."
@@ -13929,7 +13929,7 @@ plot_geofacet_state_trends <- function(
       labels = scales::label_comma(accuracy = 1)
     ) +
     ggplot2::labs(
-      title    = sprintf("FPMRS Publications by State (%d\u2013%d)",
+      title    = sprintf("URPS Publications by State (%d\u2013%d)",
                          year_start, year_end),
       subtitle = "Small-multiple trend per state in geographic layout",
       x = NULL, y = "Publications"
@@ -13996,7 +13996,7 @@ plot_statebin_map <- function(
     palette_name = "Blues",
     palette_dir  = 1L,
     legend_title = "Publications\nper 1M beneficiaries",
-    title        = "FPMRS Publication Rate by State",
+    title        = "URPS Publication Rate by State",
     verbose      = TRUE
 ) {
   assertthat::assert_that(is.data.frame(state_data))
