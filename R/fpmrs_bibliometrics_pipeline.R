@@ -9369,7 +9369,16 @@ plot_journal_trends <- function(
   journal_stacked_data <- journal_trends |>
     dplyr::filter(.data$journal %in% top_journals_vector) |>
     dplyr::mutate(
-      journal = stringr::str_wrap(.data$journal, width = 35),
+      # Convert ALL CAPS journal names to Title Case for readable legend
+      journal = stringr::str_to_title(tolower(.data$journal)),
+      # Common abbreviation fixes after title-casing
+      journal = stringr::str_replace_all(journal, "\\bAnd\\b", "and"),
+      journal = stringr::str_replace_all(journal, "\\bOf\\b", "of"),
+      journal = stringr::str_replace_all(journal, "\\bThe\\b", "the"),
+      journal = stringr::str_replace_all(journal, "\\bFor\\b", "for"),
+      journal = stringr::str_replace_all(journal, "\\bIn\\b", "in"),
+      # Wrap long names for legend readability
+      journal = stringr::str_wrap(.data$journal, width = 30),
       journal = factor(.data$journal)
     )
 
@@ -9384,7 +9393,7 @@ plot_journal_trends <- function(
     ggplot2::geom_col(position = "stack", width = 0.85) +
     ggplot2::scale_fill_brewer(
       palette = "Set2",
-      name    = "Journal"
+      name    = NULL  # remove "Journal" title — self-evident from context
     ) +
     ggplot2::scale_y_continuous(
       labels = scales::label_comma(),
@@ -9401,8 +9410,13 @@ plot_journal_trends <- function(
     ) +
     .theme_fpmrs_manuscript() +
     ggplot2::theme(
-      legend.text = ggplot2::element_text(size = 7)
-    )
+      legend.text     = ggplot2::element_text(size = 7.5, lineheight = 1.1),
+      legend.key.size = ggplot2::unit(0.4, "cm"),
+      legend.spacing.y = ggplot2::unit(0.15, "cm"),
+      legend.position = "bottom",
+      legend.direction = "vertical"
+    ) +
+    ggplot2::guides(fill = ggplot2::guide_legend(ncol = 2))
 
   .log_step("[PLOT] Journal trends figure complete.", verbose)
   return(figure_journal)
