@@ -550,43 +550,63 @@ make_eras <- function(year_start, year_end) {
     verbose
 ) {
   if (data_source == "pubmed") {
-    .log_step("[LOAD] Querying PubMed API ...", verbose)
-    .log_step(sprintf(
-      "[LOAD] Query: %s", substr(pubmed_query, 1, 100)
-    ), verbose)
+    # ── Cache: skip PubMed fetch if cached RDS exists ──────────────────────
+    # The query hash uniquely identifies the search. If a cached file with
+    # matching hash exists, load it instead of re-fetching 59K+ records.
+    .cache_dir <- file.path("data", "cache")
+    if (!dir.exists(.cache_dir)) dir.create(.cache_dir, recursive = TRUE, showWarnings = FALSE)
+    .query_hash <- digest::digest(list(pubmed_query, "pubmed"), algo = "md5")
+    .cache_path <- file.path(.cache_dir, sprintf("pubmed_raw_%s.rds", .query_hash))
 
-    all_chunks <- .fetch_pubmed_chunks(
-      pubmed_query    = pubmed_query,
-      year_start      = 1975L,
-      year_end        = as.integer(format(Sys.Date(), "%Y")),
-      pubmed_api_key  = pubmed_api_key,
-      verbose         = verbose
-    )
+    if (file.exists(.cache_path)) {
+      .log_step(sprintf("[CACHE HIT] Loading cached PubMed data: %s", basename(.cache_path)), verbose)
+      pubmed_raw_df <- readRDS(.cache_path)
+      .log_step(sprintf("[CACHE HIT] %d records x %d cols loaded from cache",
+                        nrow(pubmed_raw_df), ncol(pubmed_raw_df)), verbose)
+    } else {
+      .log_step("[LOAD] Querying PubMed API (no cache found) ...", verbose)
+      .log_step(sprintf(
+        "[LOAD] Query: %s", substr(pubmed_query, 1, 100)
+      ), verbose)
 
-    if (length(all_chunks) == 0) {
-      stop("[LOAD] No records retrieved from any year range.", call. = FALSE)
-    }
+      all_chunks <- .fetch_pubmed_chunks(
+        pubmed_query    = pubmed_query,
+        year_start      = 1975L,
+        year_end        = as.integer(format(Sys.Date(), "%Y")),
+        pubmed_api_key  = pubmed_api_key,
+        verbose         = verbose
+      )
 
-    .total_available <- sum(vapply(
-      all_chunks,
-      function(chunk) chunk$total_available,
-      integer(1L)
-    ))
-    pubmed_raw_df <- dplyr::bind_rows(lapply(all_chunks, `[[`, "data"))
-    # Deduplicate by PMID (overlapping year ranges can return same record)
-    if ("PMID" %in% names(pubmed_raw_df)) {
-      .n_before <- nrow(pubmed_raw_df)
-      pubmed_raw_df <- pubmed_raw_df[!duplicated(pubmed_raw_df$PMID), ]
-      .n_deduped <- .n_before - nrow(pubmed_raw_df)
-      if (.n_deduped > 0) {
-        .log_step(sprintf("[LOAD] Deduplicated %d records by PMID", .n_deduped), verbose)
+      if (length(all_chunks) == 0) {
+        stop("[LOAD] No records retrieved from any year range.", call. = FALSE)
       }
+
+      .total_available <- sum(vapply(
+        all_chunks,
+        function(chunk) chunk$total_available,
+        integer(1L)
+      ))
+      pubmed_raw_df <- dplyr::bind_rows(lapply(all_chunks, `[[`, "data"))
+      # Deduplicate by PMID (overlapping year ranges can return same record)
+      if ("PMID" %in% names(pubmed_raw_df)) {
+        .n_before <- nrow(pubmed_raw_df)
+        pubmed_raw_df <- pubmed_raw_df[!duplicated(pubmed_raw_df$PMID), ]
+        .n_deduped <- .n_before - nrow(pubmed_raw_df)
+        if (.n_deduped > 0) {
+          .log_step(sprintf("[LOAD] Deduplicated %d records by PMID", .n_deduped), verbose)
+        }
+      }
+
+      .log_step(sprintf(
+        "[LOAD] PubMed API: %d total available, %d fetched across %d year ranges",
+        .total_available, nrow(pubmed_raw_df), length(all_chunks)
+      ), verbose)
+
+      # Save to cache for next run
+      saveRDS(pubmed_raw_df, .cache_path)
+      .log_step(sprintf("[CACHE SAVE] %d records saved to %s", nrow(pubmed_raw_df), basename(.cache_path)), verbose)
     }
 
-    .log_step(sprintf(
-      "[LOAD] PubMed API: %d total available, %d fetched across %d year ranges",
-      .total_available, nrow(pubmed_raw_df), length(all_chunks)
-    ), verbose)
     .log_step(sprintf(
       "[LOAD] Converted PubMed response: %d rows x %d cols",
       nrow(pubmed_raw_df), ncol(pubmed_raw_df)
