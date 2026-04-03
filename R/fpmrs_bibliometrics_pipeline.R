@@ -14,6 +14,156 @@
 # ============================================================
 
 #' @noRd
+.enrich_with_openalex <- function(bibliography, verbose = TRUE) {
+  if (!requireNamespace("openalexR", quietly = TRUE)) {
+    .log_step("[OPENALEX] openalexR not installed — skipping enrichment.", verbose)
+    return(bibliography)
+  }
+
+  pmids <- as.character(bibliography$PMID[!is.na(bibliography$PMID) & nzchar(bibliography$PMID)])
+  pmids <- unique(trimws(pmids))
+  if (length(pmids) == 0) {
+    .log_step("[OPENALEX] No PMIDs found — skipping enrichment.", verbose)
+    return(bibliography)
+  }
+
+  # Check OpenAlex cache
+  .oa_cache_dir <- file.path("data", "cache")
+  if (!dir.exists(.oa_cache_dir)) dir.create(.oa_cache_dir, recursive = TRUE, showWarnings = FALSE)
+  .oa_hash <- digest::digest(sort(pmids), algo = "md5")
+  .oa_cache_path <- file.path(.oa_cache_dir, sprintf("openalex_%s.rds", .oa_hash))
+
+  if (file.exists(.oa_cache_path)) {
+    .log_step(sprintf("[OPENALEX CACHE HIT] Loading cached enrichment: %s", basename(.oa_cache_path)), verbose)
+    oa_merged <- readRDS(.oa_cache_path)
+    # Skip to merge step below
+    bibliography$PMID_clean <- trimws(as.character(bibliography$PMID))
+    bibliography <- dplyr::left_join(
+      bibliography,
+      oa_merged[, c("pmid_clean", "cited_by_count", "first_author_country", "is_oa", "fwci")],
+      by = c("PMID_clean" = "pmid_clean")
+    )
+    if ("cited_by_count" %in% names(bibliography)) {
+      bibliography$TC <- dplyr::coalesce(as.integer(bibliography$cited_by_count), as.integer(bibliography$TC))
+    }
+    if ("first_author_country" %in% names(bibliography)) {
+      bibliography$AU_CO <- dplyr::coalesce(bibliography$first_author_country, bibliography$AU_CO)
+    }
+    n_citations <- sum(!is.na(bibliography$cited_by_count))
+    n_countries <- sum(!is.na(bibliography$first_author_country))
+    .log_step(sprintf("[OPENALEX CACHE] Enriched: %d citations, %d countries", n_citations, n_countries), verbose)
+    bibliography$PMID_clean <- NULL
+    bibliography$cited_by_count <- NULL
+    bibliography$first_author_country <- NULL
+    return(bibliography)
+  }
+
+  .log_step(sprintf("[OPENALEX] Enriching %d records from OpenAlex API (no cache) ...", length(pmids)), verbose)
+
+  # Batch in groups of 50 (OpenAlex pipe-delimited filter limit)
+  batch_size <- 50L
+  batches <- split(pmids, ceiling(seq_along(pmids) / batch_size))
+  all_results <- list()
+
+  for (i in seq_along(batches)) {
+    if (i %% 20 == 0 || i == 1) {
+      .log_step(sprintf("[OPENALEX]   Batch %d/%d ...", i, length(batches)), verbose)
+    }
+    batch_pmids <- batches[[i]]
+
+    result <- tryCatch({
+      oa_data <- openalexR::oa_fetch(
+        entity = "works",
+        pmid = batch_pmids,
+        verbose = FALSE
+      )
+      if (is.null(oa_data) || nrow(oa_data) == 0) return(NULL)
+
+      # Extract PMID from ids column
+      oa_data$pmid_clean <- vapply(oa_data$ids, function(ids) {
+        pm <- ids$pmid
+        if (is.null(pm) || length(pm) == 0) return(NA_character_)
+        gsub("https://pubmed.ncbi.nlm.nih.gov/", "", as.character(pm[1]))
+      }, character(1))
+
+      # Extract first-author country
+      oa_data$first_author_country <- vapply(oa_data$authorships, function(auth) {
+        if (is.null(auth) || nrow(auth) == 0) return(NA_character_)
+        first <- auth[auth$author_position == "first", ]
+        if (nrow(first) == 0) first <- auth[1, , drop = FALSE]
+        affs <- first$affiliations[[1]]
+        if (is.null(affs) || nrow(affs) == 0) return(NA_character_)
+        cc <- affs$country_code[1]
+        if (is.null(cc) || is.na(cc)) NA_character_ else as.character(cc)
+      }, character(1))
+
+      oa_data[, c("pmid_clean", "cited_by_count", "first_author_country", "is_oa", "fwci")]
+    }, error = function(e) {
+      NULL
+    })
+
+    if (!is.null(result)) all_results <- c(all_results, list(result))
+
+    # Rate limit courtesy
+    if (i %% 10 == 0) Sys.sleep(1)
+  }
+
+  if (length(all_results) == 0) {
+    .log_step("[OPENALEX] No results returned — skipping enrichment.", verbose)
+    return(bibliography)
+  }
+
+  oa_merged <- dplyr::bind_rows(all_results)
+  oa_merged <- oa_merged[!is.na(oa_merged$pmid_clean), ]
+  oa_merged <- oa_merged[!duplicated(oa_merged$pmid_clean), ]
+
+  .log_step(sprintf("[OPENALEX] Got metadata for %d/%d PMIDs (%.1f%%)",
+                    nrow(oa_merged), length(pmids),
+                    100 * nrow(oa_merged) / length(pmids)), verbose)
+
+  # Save OpenAlex cache for next run
+  saveRDS(oa_merged, .oa_cache_path)
+  .log_step(sprintf("[OPENALEX CACHE SAVE] %d records saved to %s",
+                    nrow(oa_merged), basename(.oa_cache_path)), verbose)
+
+  # Merge into bibliography
+  bibliography$PMID_clean <- trimws(as.character(bibliography$PMID))
+  bibliography <- dplyr::left_join(
+    bibliography,
+    oa_merged[, c("pmid_clean", "cited_by_count", "first_author_country", "is_oa", "fwci")],
+    by = c("PMID_clean" = "pmid_clean")
+  )
+
+  # Update TC (total citations) column used by bibliometrix
+  if ("cited_by_count" %in% names(bibliography)) {
+    bibliography$TC <- dplyr::coalesce(
+      as.integer(bibliography$cited_by_count),
+      as.integer(bibliography$TC)
+    )
+  }
+
+  # Update AU_CO (author country) column used by bibliometrix
+  if ("first_author_country" %in% names(bibliography)) {
+    bibliography$AU_CO <- dplyr::coalesce(
+      bibliography$first_author_country,
+      bibliography$AU_CO
+    )
+  }
+
+  n_citations <- sum(!is.na(bibliography$cited_by_count))
+  n_countries <- sum(!is.na(bibliography$first_author_country))
+  .log_step(sprintf("[OPENALEX] Enriched: %d citations, %d countries, %d open-access flags",
+                    n_citations, n_countries, sum(!is.na(bibliography$is_oa))), verbose)
+
+  # Clean up temp columns
+  bibliography$PMID_clean <- NULL
+  bibliography$cited_by_count <- NULL
+  bibliography$first_author_country <- NULL
+
+  return(bibliography)
+}
+
+#' @noRd
 .log_step <- function(msg, verbose) {
   if (isTRUE(verbose)) message(msg)
   invisible(NULL)
@@ -685,6 +835,10 @@ make_eras <- function(year_start, year_end) {
     "[LOAD] Standardized bibliography: %d records, %d fields",
     nrow(bibliography_standardized), ncol(bibliography_standardized)
   ), verbose)
+
+  # Enrich with OpenAlex: adds citation counts (TC) and author countries (AU_CO)
+  # that PubMed API does not provide. Cached via the main PubMed cache mechanism.
+  bibliography_standardized <- .enrich_with_openalex(bibliography_standardized, verbose)
 
   return(bibliography_standardized)
 }
