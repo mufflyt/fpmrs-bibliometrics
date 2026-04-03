@@ -9391,12 +9391,12 @@ plot_journal_trends <- function(
     dplyr::mutate(
       # Convert ALL CAPS journal names to Title Case for readable legend
       journal = stringr::str_to_title(tolower(.data$journal)),
-      # Common abbreviation fixes after title-casing
-      journal = stringr::str_replace_all(journal, "\\bAnd\\b", "and"),
-      journal = stringr::str_replace_all(journal, "\\bOf\\b", "of"),
-      journal = stringr::str_replace_all(journal, "\\bThe\\b", "the"),
-      journal = stringr::str_replace_all(journal, "\\bFor\\b", "for"),
-      journal = stringr::str_replace_all(journal, "\\bIn\\b", "in"),
+      # Common preposition fixes after title-casing (lowercase mid-title only)
+      journal = stringr::str_replace_all(journal, "(?<=\\s)And\\b", "and"),
+      journal = stringr::str_replace_all(journal, "(?<=\\s)Of\\b", "of"),
+      journal = stringr::str_replace_all(journal, "(?<=\\s)The\\b", "the"),
+      journal = stringr::str_replace_all(journal, "(?<=\\s)For\\b", "for"),
+      journal = stringr::str_replace_all(journal, "(?<=\\s)In\\b", "in"),
       # Wrap long names for legend readability
       journal = stringr::str_wrap(.data$journal, width = 30),
       journal = factor(.data$journal)
