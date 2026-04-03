@@ -9277,7 +9277,7 @@ plot_citation_trends <- function(
     ncol = 1
   ) +
     patchwork::plot_annotation(
-      title    = "FPMRS Citation Impact Over Time",
+      title    = "URPS Citation Impact Over Time",
       subtitle = sprintf("%d-%d", year_start, year_end),
       theme    = ggplot2::theme(
         plot.title    = ggplot2::element_text(
@@ -9443,14 +9443,32 @@ plot_country_contributions <- function(
     return(
       ggplot2::ggplot() +
         ggplot2::labs(
-          title    = "Geographic Distribution of FPMRS Publications",
+          title    = "Geographic Distribution of URPS Publications",
           subtitle = "No country data available (AU_CO column absent)."
         ) +
         .theme_fpmrs_manuscript()
     )
   }
 
-  top_countries_by_volume <- country_contribution_trends |>
+  # ISO 2-letter code to full country name mapping
+  .iso_to_name <- c(
+    US = "United States", GB = "United Kingdom", CN = "China", DE = "Germany",
+    IT = "Italy", FR = "France", CA = "Canada", AU = "Australia",
+    JP = "Japan", BR = "Brazil", KR = "South Korea", NL = "Netherlands",
+    ES = "Spain", SE = "Sweden", TR = "Turkey", IN = "India",
+    CH = "Switzerland", DK = "Denmark", NO = "Norway", FI = "Finland",
+    AT = "Austria", BE = "Belgium", IL = "Israel", NZ = "New Zealand",
+    TW = "Taiwan", SG = "Singapore", IE = "Ireland", PT = "Portugal",
+    EG = "Egypt", SA = "Saudi Arabia", IR = "Iran", TH = "Thailand",
+    PL = "Poland", GR = "Greece", CZ = "Czech Republic", MX = "Mexico",
+    CO = "Colombia", CL = "Chile", AR = "Argentina", NG = "Nigeria"
+  )
+
+  # Filter out NA/unknown countries before ranking
+  country_data_clean <- country_contribution_trends |>
+    dplyr::filter(!is.na(.data$country) & .data$country != "NA" & nzchar(.data$country))
+
+  top_countries_by_volume <- country_data_clean |>
     dplyr::group_by(.data$country) |>
     dplyr::summarise(
       total_publications = sum(.data$publication_count),
@@ -9465,12 +9483,21 @@ plot_country_contributions <- function(
     paste(top_countries_by_volume, collapse = ", ")
   ), verbose)
 
-  stacked_area_data <- country_contribution_trends |>
+  stacked_area_data <- country_data_clean |>
     dplyr::filter(.data$country %in% top_countries_by_volume) |>
     dplyr::mutate(
-      country = factor(
-        .data$country,
-        levels = rev(top_countries_by_volume)
+      country_label = dplyr::if_else(
+        .data$country %in% names(.iso_to_name),
+        .iso_to_name[.data$country],
+        .data$country
+      ),
+      country_label = factor(
+        .data$country_label,
+        levels = rev(dplyr::if_else(
+          top_countries_by_volume %in% names(.iso_to_name),
+          .iso_to_name[top_countries_by_volume],
+          top_countries_by_volume
+        ))
       )
     )
 
@@ -9479,7 +9506,7 @@ plot_country_contributions <- function(
     ggplot2::aes(
       x    = .data$publication_year,
       y    = .data$publication_count,
-      fill = .data$country
+      fill = .data$country_label
     )
   ) +
     ggplot2::geom_area(position = "stack", alpha = 0.88) +
@@ -9493,7 +9520,7 @@ plot_country_contributions <- function(
       expand = ggplot2::expansion(mult = c(0, 0.05))
     ) +
     ggplot2::labs(
-      title    = "Geographic Distribution of FPMRS Publications",
+      title    = "Geographic Distribution of URPS Publications",
       subtitle = sprintf(
         "Top %d countries (stacked; one count per article per country)",
         top_n_countries
