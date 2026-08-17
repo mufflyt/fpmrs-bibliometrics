@@ -140,6 +140,7 @@ jobs:
             any::patchwork
             any::pdftools
             any::withr
+            any::xml2
 
       - name: Run test suite
         run: |
