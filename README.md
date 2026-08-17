@@ -36,6 +36,15 @@ install.packages(c("patchwork", "pdftools"))
 installs and CI. The project is consumed by sourcing the script, not via
 `library()`.
 
+`genderizeR` is archived on CRAN and is therefore not declared in
+`DESCRIPTION` — listing it would make the dependency set unresolvable.
+`infer_gender_cascade()` guards it and defaults to `use_genderizeR = FALSE`.
+Install it from the archive only if you need that fallback:
+
+```r
+remotes::install_version("genderizeR", version = "2.1.1")
+```
+
 ## Usage
 
 ```r

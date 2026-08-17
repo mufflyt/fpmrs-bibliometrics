@@ -10,7 +10,10 @@ Description: Manuscript-ready longitudinal bibliometric analysis of
     subspecialty benchmarking. This DESCRIPTION exists to declare the
     dependency surface for reproducible installs and CI; the project is
     consumed by sourcing R/fpmrs_bibliometrics_pipeline.R rather than by
-    library() attachment.
+    library() attachment. genderizeR is deliberately not declared: it is
+    archived on CRAN, so listing it makes the dependency set unresolvable
+    for pak. infer_gender_cascade() guards it with requireNamespace() and
+    defaults to use_genderizeR = FALSE.
 License: MIT + file LICENSE
 Encoding: UTF-8
 NeedsCompilation: no
@@ -34,7 +37,6 @@ Suggests:
     furrr,
     future,
     gender,
-    genderizeR,
     geofacet,
     here,
     httr,
