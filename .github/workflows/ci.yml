@@ -1,0 +1,228 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Never let a transient CRAN mirror hiccup look like a code failure.
+  R_KEEP_PKG_SOURCE: yes
+  # Tests must not reach the network; the live-API suite is a separate,
+  # scheduled workflow.
+  FPMRS_RUN_NETWORK_TESTS: "false"
+
+jobs:
+  # ---------------------------------------------------------------
+  # The pipeline is consumed via source(). If someone adds a top-level
+  # call to a Suggests-only package, sourcing breaks for anyone without
+  # the heavy optional stack (brms, sf, tigris...). This job installs
+  # ONLY hard dependencies and proves the file still loads.
+  # ---------------------------------------------------------------
+  source-check:
+    name: Sources with hard deps only
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          dependencies: '"Depends", "Imports", "LinkingTo"'
+
+      - name: Parse
+        run: |
+          invisible(parse("R/fpmrs_bibliometrics_pipeline.R"))
+          cat("parse OK\n")
+        shell: Rscript {0}
+
+      - name: Source into a clean session
+        run: |
+          before_ns <- loadedNamespaces()
+          before <- ls(envir = globalenv())
+
+          sys.source("R/fpmrs_bibliometrics_pipeline.R", envir = globalenv())
+
+          defined <- setdiff(ls(envir = globalenv()), before)
+          cat("source OK -", length(defined), "objects defined\n")
+          if (length(defined) < 50L) {
+            stop("suspiciously few objects defined; did sourcing silently fail?")
+          }
+
+          # Only hard dependencies may be needed at source time. Anything
+          # else means a Suggests-only package leaked into top-level code,
+          # which breaks sourcing for anyone without the optional stack.
+          desc <- read.dcf("DESCRIPTION")
+          hard <- trimws(strsplit(desc[1, "Imports"], ",")[[1]])
+          loaded <- setdiff(loadedNamespaces(), before_ns)
+          suggests <- trimws(strsplit(desc[1, "Suggests"], ",")[[1]])
+          suggests <- sub("[ ]*\\(.*\\)$", "", suggests)
+
+          leaked <- intersect(loaded, suggests)
+          if (length(leaked) > 0L) {
+            stop(
+              "Suggests-only package(s) required at source time: ",
+              paste(leaked, collapse = ", "),
+              "\nMove the call inside a function, or promote to Imports."
+            )
+          }
+          cat("no Suggests-only package needed at source time\n")
+        shell: Rscript {0}
+
+  # ---------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          dependencies: '"Depends", "Imports", "LinkingTo"'
+          extra-packages: any::lintr
+
+      - name: Lint
+        run: |
+          lints <- lintr::lint_dir(
+            path = ".",
+            pattern = "[.]R$",
+            exclusions = list("tests")
+          )
+          print(lints)
+          if (length(lints) > 0L) {
+            quit(status = 1L)
+          }
+        shell: Rscript {0}
+
+  # ---------------------------------------------------------------
+  test:
+    name: Test (R ${{ matrix.r }} / ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, r: 'release' }
+          - { os: ubuntu-latest, r: 'oldrel-1' }
+          - { os: macos-latest,  r: 'release' }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: ${{ matrix.r }}
+          use-public-rspm: true
+
+      # Only the packages the offline suite actually needs. Installing the
+      # full Suggests list would drag in brms/Stan, sf/GDAL and tigris for
+      # no benefit here.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          dependencies: '"Depends", "Imports", "LinkingTo"'
+          extra-packages: |
+            any::testthat
+            any::patchwork
+            any::pdftools
+            any::withr
+
+      - name: Run test suite
+        run: |
+          library(testthat)
+          # test_dir() changes the working directory to the test folder, so
+          # the JUnit path must be absolute or the report lands in
+          # tests/testthat/ and the upload step finds nothing.
+          junit <- file.path(getwd(), "test-results.xml")
+          res <- test_dir(
+            "tests/testthat",
+            reporter = MultiReporter$new(list(
+              ProgressReporter$new(),
+              JunitReporter$new(file = junit)
+            )),
+            stop_on_failure = FALSE
+          )
+          df <- as.data.frame(res)
+          cat(sprintf(
+            "\nPASS %d | FAIL %d | ERROR %d | SKIP %d\n",
+            sum(df$passed), sum(df$failed), sum(df$error), sum(df$skipped)
+          ))
+          if (sum(df$failed) > 0L || any(df$error)) quit(status = 1L)
+        shell: Rscript {0}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.r }}
+          path: test-results.xml
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------
+  # Renders the manuscript figures from synthetic data and keeps them as
+  # artifacts, so a reviewer can eyeball a PR's visual impact without
+  # running anything locally.
+  # ---------------------------------------------------------------
+  figures:
+    name: Render figures (synthetic)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          dependencies: '"Depends", "Imports", "LinkingTo"'
+          extra-packages: |
+            any::patchwork
+            any::pdftools
+
+      - name: Build figures from synthetic corpus
+        run: Rscript inst/ci/render_synthetic_figures.R
+
+      - name: Upload figures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-figures
+          path: ci-figures/
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------
+  # The PubMed query defines the corpus. If it changes, every published
+  # number changes with it. This job fails loudly on an unannounced edit.
+  # ---------------------------------------------------------------
+  query-stability:
+    name: Query stability
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          dependencies: '"Depends", "Imports", "LinkingTo"'
+
+      - name: Compare query hash against the committed baseline
+        run: Rscript inst/ci/check_query_stability.R

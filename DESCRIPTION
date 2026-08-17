@@ -1,0 +1,61 @@
+Package: fpmrs.bibliometrics
+Title: Longitudinal Bibliometric Analysis of URPS Literature
+Version: 0.1.0
+Authors@R:
+    person("Tyler", "Muffly", role = c("aut", "cre"),
+           email = "tyler.muffly@dhha.org")
+Description: Manuscript-ready longitudinal bibliometric analysis of
+    Urogynecology and Reconstructive Pelvic Surgery (URPS) literature,
+    with PubMed retrieval, OpenAlex enrichment, and comparative
+    subspecialty benchmarking. This DESCRIPTION exists to declare the
+    dependency surface for reproducible installs and CI; the project is
+    consumed by sourcing R/fpmrs_bibliometrics_pipeline.R rather than by
+    library() attachment.
+License: MIT + file LICENSE
+Encoding: UTF-8
+NeedsCompilation: no
+Imports:
+    assertthat,
+    digest,
+    dplyr,
+    ggplot2,
+    jsonlite,
+    purrr,
+    scales,
+    stringr,
+    tibble,
+    tidyr
+Suggests:
+    bibliometrix,
+    brms,
+    config,
+    cowplot,
+    fixest,
+    furrr,
+    future,
+    gender,
+    genderizeR,
+    geofacet,
+    here,
+    httr,
+    lintr,
+    MASS,
+    Matrix,
+    mblm,
+    mgcv,
+    openalexR,
+    patchwork,
+    pdftools,
+    pscl,
+    pubmedR,
+    rentrez,
+    renv,
+    segmented,
+    sessioninfo,
+    sf,
+    statebins,
+    survival,
+    testthat (>= 3.0.0),
+    tigris,
+    tseries
+Config/testthat/edition: 3

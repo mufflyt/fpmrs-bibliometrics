@@ -24,3 +24,8 @@ Thumbs.db
 renv/library/
 renv/staging/
 renv/local/
+
+# CI artifacts
+ci-figures/
+test-results.xml
+tests/testthat/_snaps/

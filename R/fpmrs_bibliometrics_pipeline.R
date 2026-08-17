@@ -47,7 +47,13 @@
       bibliography$TC <- dplyr::coalesce(as.integer(bibliography$cited_by_count), as.integer(bibliography$TC))
     }
     if ("first_author_country" %in% names(bibliography)) {
-      bibliography$AU_CO <- dplyr::coalesce(bibliography$first_author_country, bibliography$AU_CO)
+      # AU_CO may not exist yet: the PubMed parser does not always emit it,
+      # and coalescing against a missing column warns and yields NULL.
+      bibliography$AU_CO <- if ("AU_CO" %in% names(bibliography)) {
+        dplyr::coalesce(bibliography$first_author_country, bibliography$AU_CO)
+      } else {
+        bibliography$first_author_country
+      }
     }
     n_citations <- sum(!is.na(bibliography$cited_by_count))
     n_countries <- sum(!is.na(bibliography$first_author_country))
@@ -146,10 +152,16 @@
 
   # Update AU_CO (author country) column used by bibliometrix
   if ("first_author_country" %in% names(bibliography)) {
-    bibliography$AU_CO <- dplyr::coalesce(
-      bibliography$first_author_country,
-      bibliography$AU_CO
-    )
+    # AU_CO may not exist yet: the PubMed parser does not always emit it,
+    # and coalescing against a missing column warns and yields NULL.
+    bibliography$AU_CO <- if ("AU_CO" %in% names(bibliography)) {
+      dplyr::coalesce(
+        bibliography$first_author_country,
+        bibliography$AU_CO
+      )
+    } else {
+      bibliography$first_author_country
+    }
   }
 
   n_citations <- sum(!is.na(bibliography$cited_by_count))
@@ -1050,12 +1062,13 @@ make_eras <- function(year_start, year_end) {
       total_citations   = as.numeric(sum(.data$citation_count, na.rm = TRUE)),
       mean_citations    = mean(.data$citation_count, na.rm = TRUE),
       median_citations  = stats::median(.data$citation_count, na.rm = TRUE),
-      max_citations     = suppressWarnings(
-        max(.data$citation_count, na.rm = TRUE)
-      ),
-      max_citations     = dplyr::if_else(
-        is.infinite(.data$max_citations), NA_real_, .data$max_citations
-      ),
+      # Single assignment: this was previously two `max_citations =`
+      # entries in one summarise(), relying on sequential evaluation to
+      # overwrite the first with the Inf-to-NA cleanup.
+      max_citations     = {
+        peak <- suppressWarnings(max(.data$citation_count, na.rm = TRUE))
+        if (is.infinite(peak)) NA_real_ else as.numeric(peak)
+      },
       .groups           = "drop"
     ) |>
     dplyr::arrange(.data$publication_year) |>
@@ -5530,9 +5543,10 @@ plot_subspecialty_heatmap <- function(
       text <- gsub(paste0("\\b", short, "\\b"), full, text, perl = TRUE)
     }
   }
-  # Capitalise first letter after ". " and "; " (sentence boundaries)
+  # Capitalise first letter after ". " only. A semicolon is NOT a sentence
+  # boundary -- capitalising after it produced "...specialties; Records
+  # published between..." throughout the abstract.
   text <- gsub("([.][[:space:]]+)([a-z])", "\\1\\U\\2", text, perl = TRUE)
-  text <- gsub("([;][[:space:]]+)([a-z])", "\\1\\U\\2", text, perl = TRUE)
   # Capitalise very first character of the whole text
   if (nchar(text) > 0L) substr(text, 1L, 1L) <- toupper(substr(text, 1L, 1L))
   text
@@ -6176,9 +6190,18 @@ generate_abstract_results_text <- function(
   .title_case_name <- function(x) {
     if (is.na(x) || nchar(trimws(x)) == 0L) return(x)
     tokens <- strsplit(trimws(x), "\\s+")[[1L]]
-    titled <- vapply(tokens, function(tok) {
+    titled <- vapply(seq_along(tokens), function(i) {
+      tok    <- tokens[[i]]
       tok_up <- toupper(tok)
-      if (tok_up %in% .preserve_caps_tokens)
+      # PubMed AU fields are "SURNAME XY", where trailing 1-2 letter
+      # tokens are author initials. Title-casing them yielded "Dietz Hp"
+      # for "DIETZ HP". Keep the allowlist (degrees, suffixes, Roman
+      # numerals) and additionally preserve short trailing tokens, while
+      # still title-casing the leading surname and any multi-letter
+      # particle such as VAN or DER.
+      is_initials <- i > 1L && nchar(tok) <= 2L &&
+        grepl("^[A-Za-z]+$", tok)
+      if (tok_up %in% .preserve_caps_tokens || is_initials)
         tok_up
       else
         paste0(toupper(substr(tok, 1L, 1L)),
@@ -8393,7 +8416,7 @@ compute_comparative_funding <- function(
       significant      = FALSE
     )
 
-    if (any(is.na(c(focal_n, focal_k, comp_n, comp_k))) ||
+    if (anyNA(c(focal_n, focal_k, comp_n, comp_k)) ||
         focal_n < 5L || comp_n < 5L)
       return(na_row)
 
@@ -17931,7 +17954,9 @@ generate_synthetic_bibliography <- function(
 
   set.seed(seed)
 
-  sp_names <- c("FPMRS","REI","MFM","GynOnc","MIGS","CFP","PAG","Urology")
+  # "URPS" (not the retired "FPMRS") so synthetic corpora work with the
+  # default focal_subspecialty in run_subspecialty_comparison().
+  sp_names <- c("URPS","REI","MFM","GynOnc","MIGS","CFP","PAG","Urology")
   sp_use   <- sp_names[seq_len(min(n_subspecialties, length(sp_names)))]
 
   female_names <- c("Jennifer","Sarah","Emily","Lisa","Michelle","Karen",

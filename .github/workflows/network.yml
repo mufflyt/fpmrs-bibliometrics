@@ -1,0 +1,54 @@
+name: Live API contract
+
+# Hits NCBI E-utilities and OpenAlex to detect upstream contract drift --
+# a renamed field or changed response shape would silently degrade
+# enrichment without any offline test noticing.
+#
+# Deliberately NOT run on pull requests: a rate-limited or down external
+# service must never block a merge.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-api:
+    name: Live API contract
+    runs-on: ubuntu-latest
+    env:
+      FPMRS_RUN_NETWORK_TESTS: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          dependencies: '"Depends", "Imports", "LinkingTo"'
+          extra-packages: |
+            any::testthat
+            any::rentrez
+            any::openalexR
+            any::withr
+
+      - name: Run live API tests
+        run: |
+          library(testthat)
+          res <- test_file(
+            "tests/testthat/test-network-live.R",
+            reporter = ProgressReporter$new()
+          )
+          df <- as.data.frame(res)
+          cat(sprintf(
+            "\nPASS %d | FAIL %d | SKIP %d\n",
+            sum(df$passed), sum(df$failed), sum(df$skipped)
+          ))
+          if (sum(df$failed) > 0L) quit(status = 1L)
+        shell: Rscript {0}
