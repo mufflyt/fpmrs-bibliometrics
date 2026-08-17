@@ -40,7 +40,7 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          dependencies: '"Depends", "Imports", "LinkingTo"'
+          dependencies: '"hard"'
 
       - name: Parse
         run: |
@@ -65,7 +65,6 @@ jobs:
           # else means a Suggests-only package leaked into top-level code,
           # which breaks sourcing for anyone without the optional stack.
           desc <- read.dcf("DESCRIPTION")
-          hard <- trimws(strsplit(desc[1, "Imports"], ",")[[1]])
           loaded <- setdiff(loadedNamespaces(), before_ns)
           suggests <- trimws(strsplit(desc[1, "Suggests"], ",")[[1]])
           suggests <- sub("[ ]*\\(.*\\)$", "", suggests)
@@ -94,7 +93,7 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          dependencies: '"Depends", "Imports", "LinkingTo"'
+          dependencies: '"hard"'
           extra-packages: any::lintr
 
       - name: Lint
@@ -135,7 +134,7 @@ jobs:
       # no benefit here.
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          dependencies: '"Depends", "Imports", "LinkingTo"'
+          dependencies: '"hard"'
           extra-packages: |
             any::testthat
             any::patchwork
@@ -190,7 +189,7 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          dependencies: '"Depends", "Imports", "LinkingTo"'
+          dependencies: '"hard"'
           extra-packages: |
             any::patchwork
             any::pdftools
@@ -222,7 +221,7 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          dependencies: '"Depends", "Imports", "LinkingTo"'
+          dependencies: '"hard"'
 
       - name: Compare query hash against the committed baseline
         run: Rscript inst/ci/check_query_stability.R
