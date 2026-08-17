@@ -989,6 +989,21 @@ make_eras <- function(year_start, year_end) {
     )
   )
 
+  # Attach true per-stage counts so the caller can build an accurate
+  # CONSORT flow. Previously the caller derived year exclusions from
+  # nrow(raw) - nrow(final), which silently folded the language
+  # exclusions into the year-exclusion count and reported 0 non-English
+  # records removed.
+  attr(bibliography_filtered, "filter_counts") <- list(
+    n_retrieved         = n_raw,
+    n_unparseable_year  = n_unparseable,
+    n_excluded_year     = n_outside_range + n_unparseable,
+    n_after_year_filter = nrow(bibliography_year_filtered),
+    n_excluded_language = nrow(bibliography_year_filtered) -
+      nrow(bibliography_filtered),
+    n_after_lang_filter = nrow(bibliography_filtered)
+  )
+
   return(bibliography_filtered)
 }
 
@@ -1732,6 +1747,10 @@ make_eras <- function(year_start, year_end) {
 #'
 #' @export
 default_subspecialty_labels <- c(
+  # URPS is the current name (2024-); FPMRS is retained so tables built
+  # under the previous nomenclature still resolve.
+  "URPS"         = "urogynecology and reconstructive pelvic surgery",
+  "Urogynecology" = "urogynecology and reconstructive pelvic surgery",
   "FPMRS"        = "female pelvic medicine and reconstructive surgery",
   "REI"          = "reproductive endocrinology and infertility",
   "Gyn Oncology" = "gynecologic oncology",
@@ -4942,7 +4961,7 @@ export_citespace_network <- function(
 #' @param comparison_summary_table Tibble from
 #'   \code{run_subspecialty_comparison()$comparison_table}.
 #' @param highlight_subspecialty Character. Subspecialty name to highlight.
-#'   Defaults to \code{"FPMRS"}.
+#'   Defaults to \code{"URPS"}.
 #' @param verbose Logical. Defaults to \code{TRUE}.
 #'
 #' @return A \code{ggplot2} object.
@@ -4956,7 +4975,7 @@ export_citespace_network <- function(
 #' @export
 plot_subspecialty_volume_comparison <- function(
     comparison_summary_table,
-    highlight_subspecialty = "FPMRS",
+    highlight_subspecialty = "URPS",
     verbose                = TRUE
 ) {
   assertthat::assert_that(is.data.frame(comparison_summary_table))
@@ -5033,7 +5052,7 @@ plot_subspecialty_volume_comparison <- function(
 #'
 #' @param comparison_summary_table Tibble from
 #'   \code{run_subspecialty_comparison()$comparison_table}.
-#' @param highlight_subspecialty Character. Defaults to \code{"FPMRS"}.
+#' @param highlight_subspecialty Character. Defaults to \code{"URPS"}.
 #' @param verbose Logical. Defaults to \code{TRUE}.
 #'
 #' @return A \code{patchwork} object.
@@ -5048,7 +5067,7 @@ plot_subspecialty_volume_comparison <- function(
 #' @export
 plot_subspecialty_citation_comparison <- function(
     comparison_summary_table,
-    highlight_subspecialty = "FPMRS",
+    highlight_subspecialty = "URPS",
     verbose                = TRUE
 ) {
   assertthat::assert_that(is.data.frame(comparison_summary_table))
@@ -5157,7 +5176,7 @@ plot_subspecialty_citation_comparison <- function(
 #'   Recommended when Urology is included due to scale difference.
 #'   Defaults to \code{TRUE}.
 #' @param highlight_subspecialty Character. Subspecialty to draw in bold.
-#'   Defaults to \code{"FPMRS"}.
+#'   Defaults to \code{"URPS"}.
 #' @param verbose Logical. Defaults to \code{TRUE}.
 #'
 #' @return A \code{ggplot2} object.
@@ -5171,7 +5190,7 @@ plot_subspecialty_citation_comparison <- function(
 plot_subspecialty_trends_overlay <- function(
     overlaid_annual_trends,
     log_scale              = TRUE,
-    highlight_subspecialty = "FPMRS",
+    highlight_subspecialty = "URPS",
     verbose                = TRUE
 ) {
   assertthat::assert_that(is.data.frame(overlaid_annual_trends))
@@ -5263,7 +5282,7 @@ plot_subspecialty_trends_overlay <- function(
 #'
 #' @param comparison_summary_table Tibble from
 #'   \code{run_subspecialty_comparison()$comparison_table}.
-#' @param highlight_subspecialty Character. Defaults to \code{"FPMRS"}.
+#' @param highlight_subspecialty Character. Defaults to \code{"URPS"}.
 #' @param verbose Logical. Defaults to \code{TRUE}.
 #'
 #' @return A \code{ggplot2} object.
@@ -5276,7 +5295,7 @@ plot_subspecialty_trends_overlay <- function(
 #' @export
 plot_subspecialty_cagr_comparison <- function(
     comparison_summary_table,
-    highlight_subspecialty = "FPMRS",
+    highlight_subspecialty = "URPS",
     verbose                = TRUE
 ) {
   assertthat::assert_that(is.data.frame(comparison_summary_table))
@@ -5544,7 +5563,7 @@ plot_subspecialty_heatmap <- function(
 #' @param comparison_summary_table Tibble from
 #'   \code{run_subspecialty_comparison()$comparison_table}.
 #' @param focal_subspecialty Character. The subspecialty the manuscript
-#'   is about. Defaults to \code{"FPMRS"}.
+#'   is about. Defaults to \code{"URPS"}.
 #' @param focal_institution_metrics Tibble or \code{NULL}. The
 #'   \code{institution_metrics} element from the focal subspecialty's
 #'   pipeline result. When supplied, adds an institution sentence.
@@ -5584,7 +5603,7 @@ plot_subspecialty_heatmap <- function(
 #' @export
 generate_abstract_results_text <- function(
     comparison_summary_table,
-    focal_subspecialty        = "FPMRS",
+    focal_subspecialty        = "URPS",
     focal_institution_metrics = NULL,
     focal_keyword_trends      = NULL,
     focal_mk_trend            = NULL,
@@ -5671,10 +5690,6 @@ generate_abstract_results_text <- function(
   # ---- Helpers ----
   fmt_n   <- function(x) scales::label_comma()(x)
   fmt_pct <- function(x) sprintf("%.1f%%", x)
-  correction_method <- if (
-    !is.null(statistics_results) &&
-    !is.null(statistics_results$pairwise_citations)
-  ) "BH" else "BH"
   `%||%` <- function(a, b) if (!is.null(a)) a else b
 
   focal <- dplyr::filter(
@@ -5756,8 +5771,13 @@ generate_abstract_results_text <- function(
       "A systematic search of the %s database was conducted",
       "using validated Medical Subject Headings (MeSH) terms and title/abstract keywords",
       "for %s and %s comparator specialties; records published",
-      "between %d and %d were retrieved and analyzed using the",
-      "bibliometrix R package (v4.x); author name variants were",
+      "between %d and %d were retrieved and analyzed in R using the",
+      "bibliometrix package and its PubMed parser (pubmedR).",
+      "Records were linked to OpenAlex by PubMed identifier to obtain",
+      "citation counts and first-author affiliation country, which the",
+      "PubMed API does not supply; citation and geographic analyses are",
+      "therefore restricted to records with a successful OpenAlex match.",
+      "Author name variants were",
       "analyzed as indexed without manual deduplication."
     ),
     data_source,
@@ -5787,7 +5807,7 @@ generate_abstract_results_text <- function(
     !is.null(statistics_results$kruskal_wallis)
   ) {
     sprintf(
-      " (Kruskal-Wallis H=%.1f, df=%d, p%s across cohort)",
+      " (Kruskal-Wallis H=%.1f, df=%d, P%s across cohort)",
       statistics_results$kruskal_wallis$H,
       statistics_results$kruskal_wallis$df,
       statistics_results$kruskal_wallis$p_fmt
@@ -5806,7 +5826,7 @@ generate_abstract_results_text <- function(
     )
     if (nrow(urol_pair) > 0L) {
       urol_pair_clause <- sprintf(
-        "; p%s vs. Urology (Benjamini-Hochberg [BH] correction)",
+        "; P%s vs. Urology (Benjamini-Hochberg [BH] correction)",
         urol_pair$p_adj_fmt[[1L]]
       )
     }
@@ -5924,14 +5944,14 @@ generate_abstract_results_text <- function(
         ) {
           gh <- statistics_results$growth_heterogeneity
           sprintf(
-            "; growth slopes differed %sacross subspecialties (analysis of variance F-test: F(%d,%d)=%.2f, p%s)",
+            "; growth slopes differed %sacross subspecialties (analysis of variance F-test: F(%d,%d)=%.2f, P%s)",
             ifelse(gh$significant, "significantly ", "non-significantly "),
             gh$df_numerator, gh$df_denominator,
             gh$F_statistic, gh$p_fmt
           )
         } else ""
         sprintf(
-          " (Poisson incidence rate ratio [IRR]=%.4f, 95%% confidence interval [CI] %.4f–%.4f, p%s%s)",
+          " (Poisson incidence rate ratio [IRR]=%.4f, 95%% confidence interval [CI] %.4f–%.4f, P%s%s)",
           focal_growth$irr,
           focal_growth$irr_lo95,
           focal_growth$irr_hi95,
@@ -5994,12 +6014,7 @@ generate_abstract_results_text <- function(
 
     # Build the monotonic trend clause
     trend_clause <- if (!is.na(mk_tau) && !is.na(mk_p)) {
-      # OB-journal P format: capital P, no leading zero
-      mk_p_fmt <- dplyr::case_when(
-        mk_p < 0.001 ~ "P<.001",
-        mk_p < 0.10  ~ sub("^0\\.", ".", sprintf("P=%.3f", mk_p)),
-        TRUE         ~ sub("^0\\.", ".", sprintf("P=%.2f", mk_p))
-      )
+      mk_p_fmt <- paste0("P", .fmt_pvalue(mk_p))
       direction_word <- dplyr::case_when(
         mk_tau > 0  ~ "a significant monotonic increase",
         mk_tau < 0  ~ "a significant monotonic decrease",
@@ -6105,7 +6120,7 @@ generate_abstract_results_text <- function(
     min_p_cp <- min(cp_tbl$p_value, na.rm = TRUE)
     if (n_sig_cp > 0L && is.finite(min_p_cp)) {
       country_p_clause <- sprintf(
-        " (p%s vs. %d of %d comparators; Benjamini-Hochberg [BH] correction)",
+        " (P%s vs. %d of %d comparators; Benjamini-Hochberg [BH] correction)",
         .fmt_pvalue(min_p_cp),
         n_sig_cp, n_tot_cp
       )
@@ -6180,7 +6195,7 @@ generate_abstract_results_text <- function(
     focal_subspecialty,
     .title_case_name(focal$top_author),
     fmt_n(focal$top_author_pubs),
-    stringr::str_to_title(focal$top_journal_by_citations)
+    .title_case_journal(focal$top_journal_by_citations)
   )
 
   # ---- Sentence: Emerging Keywords (optional) ----
@@ -6249,9 +6264,10 @@ generate_abstract_results_text <- function(
 
   # ---- Sentence: Urology comparison ----
   s_urology <- if (nrow(urology_row) > 0L) {
-    volume_ratio <- round(
-      urology_row$total_documents / max(focal$total_documents, 1L), 0L
-    )
+    # One decimal place: rounding to whole numbers printed "1x" for a
+    # true ratio of 1.4 and "0x" for anything below 0.5.
+    volume_ratio <- urology_row$total_documents /
+      max(focal$total_documents, 1L)
     urology_cagr <- urology_row$cagr_pct
 
     faster_grower <- dplyr::case_when(
@@ -6279,7 +6295,7 @@ generate_abstract_results_text <- function(
 
     sprintf(
       paste(
-        "Urology produced approximately %dx the publication",
+        "Urology produced approximately %.1fx the publication",
         "volume of %s (%s vs. %s documents); %s."
       ),
       volume_ratio,
@@ -6552,14 +6568,30 @@ generate_abstract_results_text <- function(
         c(hic_clause, lmic_clause), collapse = "; "
       )
 
+      # The opening clause must track which condition actually fired.
+      # Previously it asserted "heavily concentrated" even when the
+      # sentence was triggered solely by high-income dominance, which
+      # could contradict the HHI reported in the same breath.
+      lead_clause <- if (is_concentrated) {
+        sprintf("Geographic authorship was heavily concentrated %s", hhi_clause)
+      } else if (nchar(hhi_clause) > 0L) {
+        sprintf("Geographic authorship was not highly concentrated %s",
+                hhi_clause)
+      } else {
+        "Geographic authorship was unevenly distributed"
+      }
+
+      # Only claim under-representation when the LMIC share is actually low.
+      implication_clause <- if (is_lmic_low || is_hic_dominant) {
+        paste(", suggesting persistent under-representation",
+              "of low- and middle-income country researchers")
+      } else ""
+
       sprintf(
-        paste(
-          "Geographic authorship was heavily concentrated %s,",
-          "with %s, suggesting persistent under-representation",
-          "of low- and middle-income country researchers."
-        ),
-        hhi_clause,
-        distribution_detail
+        "%s, with %s%s.",
+        lead_clause,
+        distribution_detail,
+        implication_clause
       )
     }
   }
@@ -6710,11 +6742,7 @@ generate_abstract_results_text <- function(
             top_nm  <- comparators$subspecialty[[top_idx]]
 
             if (!is.na(top_p)) {
-              top_p_fmt <- dplyr::case_when(
-                top_p < 0.001 ~ "P<.001",
-                top_p < 0.10  ~ sub("^0\\.", ".", sprintf("P=%.3f", top_p)),
-                TRUE          ~ sub("^0\\.", ".", sprintf("P=%.2f", top_p))
-              )
+              top_p_fmt <- paste0("P", .fmt_pvalue(top_p))
               sprintf(
                 " (%s vs. %s; %d of %d pairwise comparisons significant, Benjamini-Hochberg [BH]-corrected)",
                 top_p_fmt, top_nm, n_sig_inline, n_tot_inline
@@ -7003,7 +7031,7 @@ ordinal_label <- function(n) {
 #' @param subspecialty_results_list Named list. Same structure as passed
 #'   to \code{run_subspecialty_comparison()}.
 #' @param focal_subspecialty Character. Focal subspecialty name. Defaults
-#'   to \code{"FPMRS"}.
+#'   to \code{"URPS"}.
 #' @param alpha Numeric. Significance threshold. Defaults to \code{0.05}.
 #' @param correction_method Character. Method passed to
 #'   \code{p.adjust()}. One of \code{"BH"} (Benjamini-Hochberg),
@@ -7035,7 +7063,7 @@ ordinal_label <- function(n) {
 #' @export
 compute_comparison_statistics <- function(
     subspecialty_results_list,
-    focal_subspecialty = "FPMRS",
+    focal_subspecialty = "URPS",
     alpha              = 0.05,
     correction_method  = "BH",
     verbose            = TRUE
@@ -7406,7 +7434,7 @@ compute_comparison_statistics <- function(
   s_stats_citations <- sprintf(
     paste(
       "Citation counts per paper differed significantly across",
-      "the %d subspecialties (Kruskal-Wallis H=%s, df=%d, p%s).",
+      "the %d subspecialties (Kruskal-Wallis H=%s, df=%d, P%s).",
       "%s demonstrated a median of %s citations per paper",
       "(vs. %s for urology%s)."
     ),
@@ -7427,7 +7455,7 @@ compute_comparison_statistics <- function(
         dplyr::filter(grepl("urology",
           tolower(.data$subspecialty)))
       if (nrow(ur) > 0)
-        sprintf("; p%s after %s correction",
+        sprintf("; P%s after %s correction",
           ur$p_adj_fmt[[1L]], correction_method)
       else ""
     }
@@ -7437,9 +7465,9 @@ compute_comparison_statistics <- function(
     sprintf(
       paste(
         "Annual publication growth in %s was %s",
-        "(Poisson IRR=%.4f, 95%% CI %.4f-%.4f, p%s);",
+        "(Poisson IRR=%.4f, 95%% CI %.4f-%.4f, P%s);",
         "growth slopes differed %sacross subspecialties",
-        "(F(%d,%d)=%.2f, p%s)."
+        "(F(%d,%d)=%.2f, P%s)."
       ),
       focal_subspecialty,
       ifelse(focal_growth_row$significant,
@@ -7572,16 +7600,37 @@ compute_comparison_statistics <- function(
 }
 
 #' @noRd
+#' Title-case a journal name, keeping mid-title prepositions lowercase
+#'
+#' Shared by the journal-trends legend and the abstract's "highest-cited
+#' outlet" sentence. Plain \code{str_to_title()} yields "The Journal Of
+#' Urology"; the lookbehind keeps an initial "The" capitalised while
+#' lowering mid-title function words.
+#' @noRd
+.title_case_journal <- function(x) {
+  out <- stringr::str_to_title(tolower(x))
+  out <- stringr::str_replace_all(out, "(?<=\\s)And\\b", "and")
+  out <- stringr::str_replace_all(out, "(?<=\\s)Of\\b",  "of")
+  out <- stringr::str_replace_all(out, "(?<=\\s)The\\b", "the")
+  out <- stringr::str_replace_all(out, "(?<=\\s)For\\b", "for")
+  out <- stringr::str_replace_all(out, "(?<=\\s)In\\b",  "in")
+  out
+}
+
 .fmt_pvalue <- function(p) {
   assertthat::assert_that(
     is.numeric(p) && length(p) == 1L,
     msg = "p must be a single numeric value in .fmt_pvalue()"
   )
+  # House style for OB/GYN journals: no leading zero on the value. The
+  # caller supplies the (capital) "P", so this returns operator+value
+  # only. Two ad-hoc case_when blocks previously emitted a competing
+  # format, producing a mix of "p<0.001" and "P<.001" in one abstract.
+  .drop_leading_zero <- function(s) sub("^([<=])0\\.", "\\1.", s)
   if (is.na(p))  return("=NA")
-  if (p <= 0.001) return("<0.001")  # boundary: p=0.001 included
-  if (p < 0.01)  return(sprintf("=%.3f", p))
-  if (p < 0.10)  return(sprintf("=%.2f", p))
-  return(sprintf("=%.2f", p))
+  if (p <= 0.001) return("<.001")  # boundary: p=0.001 included
+  if (p < 0.01)  return(.drop_leading_zero(sprintf("=%.3f", p)))
+  return(.drop_leading_zero(sprintf("=%.2f", p)))
 }
 
 
@@ -7799,7 +7848,7 @@ compute_nomenclature_transition <- function(
 #' @param subspecialty_results_list Named list of subspecialty results
 #'   from \code{run_fpmrs_bibliometric_pipeline()} or
 #'   \code{run_subspecialty_comparison()}.
-#' @param focal_subspecialty Character. Defaults to \code{"FPMRS"}.
+#' @param focal_subspecialty Character. Defaults to \code{"URPS"}.
 #' @param breakpoints Named integer vector of regulatory event years.
 #' @param output_dir Character. Directory for saved outputs.
 #' @param alpha Numeric significance threshold. Defaults to
@@ -7813,7 +7862,7 @@ compute_nomenclature_transition <- function(
 #' \dontrun{
 #' its <- run_mesh_its_analysis(
 #'   subspecialty_results_list = sp_list,
-#'   focal_subspecialty        = "FPMRS",
+#'   focal_subspecialty        = "URPS",
 #'   output_dir                = "output/mesh_its/"
 #' )
 #' its$FPMRS$segment_fits
@@ -7824,7 +7873,7 @@ compute_nomenclature_transition <- function(
 #' @export
 run_mesh_its_analysis <- function(
     subspecialty_results_list,
-    focal_subspecialty = "FPMRS",
+    focal_subspecialty = "URPS",
     breakpoints = c(
       "2008 FDA notification"           = 2008L,
       "2011 FDA safety update"          = 2011L,
@@ -7901,7 +7950,7 @@ run_mesh_its_analysis <- function(
 #' trajectory differs statistically from comparator subspecialties.
 #'
 #' @param subspecialty_results_list Named list of subspecialty results.
-#' @param focal_subspecialty Character. Defaults to \code{"FPMRS"}.
+#' @param focal_subspecialty Character. Defaults to \code{"URPS"}.
 #' @param eras Named list of era year ranges. \code{NULL} auto-derives
 #'   from bibliography year range.
 #' @param correction_method Character p.adjust method. Defaults to
@@ -7917,7 +7966,7 @@ run_mesh_its_analysis <- function(
 #' \dontrun{
 #' gender_result <- compute_comparative_gender_trends(
 #'   subspecialty_results_list,
-#'   focal_subspecialty = "FPMRS"
+#'   focal_subspecialty = "URPS"
 #' )
 #' gender_result$pairwise_tests
 #' }
@@ -7932,7 +7981,7 @@ run_mesh_its_analysis <- function(
 #' @export
 compute_comparative_gender_trends <- function(
     subspecialty_results_list,
-    focal_subspecialty = "FPMRS",
+    focal_subspecialty = "URPS",
     eras               = NULL,
     correction_method  = "BH",
     alpha              = 0.05,
@@ -8093,7 +8142,7 @@ compute_comparative_gender_trends <- function(
 #' @param subspecialty_results_list Named list. Each element must have
 #'   a \code{bibliography} data frame and a \code{subspecialty}
 #'   character field.
-#' @param focal_subspecialty Character. Defaults to \code{"FPMRS"}.
+#' @param focal_subspecialty Character. Defaults to \code{"URPS"}.
 #' @param eras Named list of era year ranges. \code{NULL} auto-derives
 #'   from bibliography year range.
 #' @param correction_method Character. p.adjust method for pairwise
@@ -8123,7 +8172,7 @@ compute_comparative_gender_trends <- function(
 #' # Requires Web of Science export (FU field)
 #' funding <- compute_comparative_funding(
 #'   subspecialty_results_list = sp_list,
-#'   focal_subspecialty        = "FPMRS",
+#'   focal_subspecialty        = "URPS",
 #'   correction_method         = "BH",
 #'   verbose                   = TRUE
 #' )
@@ -8143,7 +8192,7 @@ compute_comparative_gender_trends <- function(
 #' @export
 compute_comparative_funding <- function(
     subspecialty_results_list,
-    focal_subspecialty = "FPMRS",
+    focal_subspecialty = "URPS",
     eras               = NULL,
     correction_method  = "BH",
     alpha              = 0.05,
@@ -8709,7 +8758,7 @@ compute_comparative_funding <- function(
 #'   subspecialty name for display (e.g., \code{"FPMRS"},
 #'   \code{"Gyn Oncology"}).
 #' @param focal_subspecialty Character. The focal subspecialty for
-#'   highlighting and abstract generation. Defaults to \code{"FPMRS"}.
+#'   highlighting and abstract generation. Defaults to \code{"URPS"}.
 #' @param output_dir Character. Directory for saved figures. Defaults
 #'   to \code{"figures/comparison/"}.
 #' @param year_start Integer. First year of the analysis window, used
@@ -8749,7 +8798,7 @@ compute_comparative_funding <- function(
 #'   output_dir   = "figures/fpmrs/",
 #'   year_start   = 1975L, year_end = 2023L, verbose = FALSE
 #' )
-#' fpmrs_result$subspecialty <- "FPMRS"
+#' fpmrs_result$subspecialty <- "URPS"
 #'
 #' gyn_onc_result <- run_fpmrs_bibliometric_pipeline(
 #'   data_source  = "pubmed",
@@ -8765,7 +8814,7 @@ compute_comparative_funding <- function(
 #'     fpmrs   = fpmrs_result,
 #'     gyn_onc = gyn_onc_result
 #'   ),
-#'   focal_subspecialty = "FPMRS",
+#'   focal_subspecialty = "URPS",
 #'   output_dir         = "figures/comparison/",
 #'   year_start         = 1975L,
 #'   year_end           = 2023L,
@@ -8787,7 +8836,7 @@ compute_comparative_funding <- function(
 #' @export
 run_subspecialty_comparison <- function(
     subspecialty_results_list,
-    focal_subspecialty = "FPMRS",
+    focal_subspecialty = "URPS",
     output_dir         = "figures/comparison/",
     year_start                = 1975L,
     year_end           = as.integer(format(Sys.Date(), "%Y")),
@@ -9153,6 +9202,10 @@ plot_annual_publications <- function(
     ) +
     ggplot2::scale_y_continuous(
       labels = scales::label_comma(),
+      # pretty() rather than the default breaks so the topmost bar always
+      # sits below a labelled gridline; the default stopped at 2,000 while
+      # bars reached ~2,700.
+      breaks = scales::breaks_pretty(n = 5),
       expand = ggplot2::expansion(mult = c(0, 0.08))
     ) +
     ggplot2::labs(
@@ -9234,7 +9287,7 @@ plot_citation_trends <- function(
       expand = ggplot2::expansion(mult = c(0, 0.08))
     ) +
     ggplot2::labs(
-      title = "A. Total Citations Received per Year",
+      title = "A. Citations Accrued by Papers Published in Each Year",
       x     = NULL,
       y     = "Total Citations"
     ) +
@@ -9261,12 +9314,19 @@ plot_citation_trends <- function(
       expand = ggplot2::expansion(mult = c(0, 0.08))
     ) +
     ggplot2::labs(
-      title   = "B. Mean Citations per Paper by Year",
+      title   = "B. Mean Citations per Paper by Publication Year",
       x       = "Publication Year",
       y       = "Mean Citations",
-      caption = paste0(
-        "Note: recent years naturally accumulate fewer citations ",
-        "due to shorter citation windows."
+      # str_wrap is required: ggplot2 does not wrap captions, so a long
+      # single line is silently clipped at the device edge.
+      caption = stringr::str_wrap(
+        paste(
+          "Both panels index citations to the year a paper was PUBLISHED,",
+          "not the year citations were received. The decline after the",
+          "mid-2000s is a censoring artifact of shorter citation windows",
+          "for recent papers and must not be read as falling impact."
+        ),
+        width = 75
       )
     ) +
     .theme_fpmrs_manuscript()
@@ -9384,12 +9444,19 @@ plot_keyword_evolution <- function(
     ggplot2::labs(
       title    = "Keyword Evolution Over Time",
       subtitle = sprintf(
-        "Top %d author keywords by cumulative frequency | ",
+        "Top %d author keywords by cumulative frequency",
         top_n_keywords
       ),
       x        = "Publication Year",
       y        = NULL,
-      caption  = "DE = author-assigned keywords; ID = keyword-plus terms."
+      caption  = stringr::str_wrap(
+        paste(
+          "Author-assigned keywords (DE field).",
+          "PubMed author keywords are sparsely indexed before ~2000,",
+          "so early blank cells reflect missing metadata, not absent topics."
+        ),
+        width = 75
+      )
     ) +
     .theme_fpmrs_manuscript() +
     ggplot2::theme(
@@ -9522,12 +9589,19 @@ plot_country_contributions <- function(
     ggplot2::labs(
       title    = "Geographic Distribution of URPS Publications",
       subtitle = sprintf(
-        "Top %d countries (stacked; one count per article per country)",
+        "Top %d countries (stacked; one count per article, first-author country)",
         top_n_countries
       ),
       x        = "Publication Year",
       y        = "Number of Publications",
-      caption  = "AU_CO = country of corresponding/first author affiliation."
+      caption  = stringr::str_wrap(
+        paste(
+          "First-author affiliation country (OpenAlex).",
+          "Articles without a resolvable first-author country are excluded,",
+          "so annual totals fall below overall publication volume."
+        ),
+        width = 75
+      )
     ) +
     .theme_fpmrs_manuscript()
 
@@ -9596,17 +9670,19 @@ plot_journal_trends <- function(
     dplyr::filter(.data$journal %in% top_journals_vector) |>
     dplyr::mutate(
       # Convert ALL CAPS journal names to Title Case for readable legend
-      journal = stringr::str_to_title(tolower(.data$journal)),
-      # Common preposition fixes after title-casing (lowercase mid-title only)
-      journal = stringr::str_replace_all(journal, "(?<=\\s)And\\b", "and"),
-      journal = stringr::str_replace_all(journal, "(?<=\\s)Of\\b", "of"),
-      journal = stringr::str_replace_all(journal, "(?<=\\s)The\\b", "the"),
-      journal = stringr::str_replace_all(journal, "(?<=\\s)For\\b", "for"),
-      journal = stringr::str_replace_all(journal, "(?<=\\s)In\\b", "in"),
+      journal = .title_case_journal(.data$journal),
       # Wrap long names for legend readability
       journal = stringr::str_wrap(.data$journal, width = 30),
       journal = factor(.data$journal)
     )
+
+  # Legend keys must be at least as tall as the tallest wrapped label,
+  # otherwise multi-line journal names overlap their neighbours.
+  max_legend_lines <- max(
+    stringr::str_count(levels(journal_stacked_data$journal), "\n") + 1L,
+    1L
+  )
+  legend_key_height <- ggplot2::unit(0.38 * max_legend_lines, "cm")
 
   figure_journal <- ggplot2::ggplot(
     data = journal_stacked_data,
@@ -9636,13 +9712,16 @@ plot_journal_trends <- function(
     ) +
     .theme_fpmrs_manuscript() +
     ggplot2::theme(
-      legend.text     = ggplot2::element_text(size = 7.5, lineheight = 1.1),
-      legend.key.size = ggplot2::unit(0.4, "cm"),
-      legend.spacing.y = ggplot2::unit(0.15, "cm"),
-      legend.position = "bottom",
-      legend.direction = "vertical"
+      legend.text       = ggplot2::element_text(size = 7.5, lineheight = 1.1),
+      legend.key.width  = ggplot2::unit(0.4, "cm"),
+      legend.key.height = legend_key_height,
+      legend.spacing.y  = ggplot2::unit(0.2, "cm"),
+      legend.position   = "bottom",
+      legend.direction  = "vertical"
     ) +
-    ggplot2::guides(fill = ggplot2::guide_legend(ncol = 2))
+    ggplot2::guides(
+      fill = ggplot2::guide_legend(ncol = 2, byrow = TRUE)
+    )
 
   .log_step("[PLOT] Journal trends figure complete.", verbose)
   return(figure_journal)
@@ -10087,7 +10166,7 @@ plot_evidence_evolution <- function(
 #'   \code{pct_unmapped}, \code{concentration_hhi}.
 #' @param subspecialty_label Character. Used as the y-axis label when
 #'   \code{equity_metrics_input} is a single data frame.
-#'   Defaults to \code{"FPMRS"}.
+#'   Defaults to \code{"URPS"}.
 #' @param verbose Logical. Defaults to \code{TRUE}.
 #'
 #' @return A \code{ggplot2} object.
@@ -10293,7 +10372,7 @@ plot_equity_breakdown <- function(
 #'   \code{di_values} list column, \code{median_di},
 #'   \code{pct_disruptive}, and \code{pct_consolidating}.
 #' @param subspecialty_label Character. Used in the title.
-#'   Defaults to \code{"FPMRS"}.
+#'   Defaults to \code{"URPS"}.
 #' @param n_bins Integer. Number of histogram bins.
 #'   Defaults to \code{40L}.
 #' @param verbose Logical. Defaults to \code{TRUE}.
@@ -10486,7 +10565,7 @@ plot_disruption_index_distribution <- function(
 #' @param eras A named list of integer vectors \code{c(start, end)}.
 #'   Defaults to the standard four-era breakdown.
 #' @param subspecialty_label Character. Used in the title.
-#'   Defaults to \code{"FPMRS"}.
+#'   Defaults to \code{"URPS"}.
 #' @param verbose Logical. Defaults to \code{TRUE}.
 #'
 #' @return A \code{patchwork} object (three vertically stacked panels).
@@ -11011,12 +11090,23 @@ run_fpmrs_bibliometric_pipeline <- function(
   # 4. Core bibliometric analysis
   # ----------------------------------------------------------
   # ---- Features 2, 3, 6: Search provenance, query hash, CONSORT flow ----
+  # Per-stage counts come from the attribute attached by
+  # .standardize_and_filter_bibliography(). Deriving them here from row
+  # counts alone cannot separate year exclusions from language
+  # exclusions, because both filters run inside that one call.
+  .fc <- attr(bibliography_filtered, "filter_counts")
   n_retrieved_total <- nrow(bibliography_raw)
-  n_after_year      <- nrow(bibliography_filtered)
-  n_excluded_yr     <- n_retrieved_total - n_after_year
-  # Language exclusions already happened inside standardize step;
-  # count by comparing filtered vs year-only filtered
-  n_excluded_lang   <- 0L  # logged inside .standardize_and_filter
+  if (is.null(.fc)) {
+    # Defensive fallback: report the combined exclusion under year and
+    # flag language as unknown rather than silently claiming zero.
+    n_after_year    <- nrow(bibliography_filtered)
+    n_excluded_yr   <- n_retrieved_total - n_after_year
+    n_excluded_lang <- NA_integer_
+  } else {
+    n_after_year    <- .fc$n_after_year_filter
+    n_excluded_yr   <- .fc$n_excluded_year
+    n_excluded_lang <- .fc$n_excluded_language
+  }
   n_excluded_dedup  <- 0L  # logged inside .merge_bibliographies when both
   n_final           <- nrow(bibliography_filtered)
 
@@ -11979,7 +12069,7 @@ run_fpmrs_bibliometric_pipeline <- function(
 #' Connected dot plot showing the percentage of female first-authored
 #' publications across four publication eras for each OB/GYN subspecialty.
 #' Each line represents one subspecialty; the focal subspecialty
-#' (default \code{"FPMRS"}) is drawn with a heavier, fully opaque line.
+#' (default \code{"URPS"}) is drawn with a heavier, fully opaque line.
 #' End-of-line labels identify each subspecialty without a legend.
 #'
 #' Gender is inferred from the first author's given name via
@@ -12019,7 +12109,7 @@ run_fpmrs_bibliometric_pipeline <- function(
 #' @param highlight_subspecialty Character scalar. Name of the
 #'   subspecialty to emphasise with a heavier line. Must match one of
 #'   the \code{subspecialty} fields in \code{subspecialty_results_list}.
-#'   Defaults to \code{"FPMRS"}.
+#'   Defaults to \code{"URPS"}.
 #' @param eras Named list where each element is a length-2 integer
 #'   vector \code{c(start_year, end_year)} (both inclusive). Names
 #'   become x-axis tick labels. Defaults to the standard four-era
@@ -12039,7 +12129,7 @@ run_fpmrs_bibliometric_pipeline <- function(
 #' # After running run_subspecialty_comparison():
 #' fig <- plot_female_authorship_by_era(
 #'   subspecialty_results_list = comparison_result$subspecialty_results,
-#'   highlight_subspecialty    = "FPMRS",
+#'   highlight_subspecialty    = "URPS",
 #'   min_classified            = 15L,
 #'   verbose                   = FALSE
 #' )
@@ -12054,7 +12144,7 @@ run_fpmrs_bibliometric_pipeline <- function(
 #'     "2010-2016"  = c(2010L, 2016L),
 #'     "Post-2016"  = c(2017L, 2023L)
 #'   ),
-#'   highlight_subspecialty = "FPMRS",
+#'   highlight_subspecialty = "URPS",
 #'   verbose = FALSE
 #' )
 #' }
@@ -12079,7 +12169,7 @@ run_fpmrs_bibliometric_pipeline <- function(
 #' @export
 plot_female_authorship_by_era <- function(
     subspecialty_results_list,
-    highlight_subspecialty = "FPMRS",
+    highlight_subspecialty = "URPS",
     eras = list(
       "2000-2007" = c(2000L, 2007L),
       "2008-2013" = c(2008L, 2013L),
@@ -12599,13 +12689,9 @@ plot_mesh_its <- function(mesh_its_result, verbose = TRUE) {
     fits |>
       dplyr::mutate(
         slope_label = sprintf(
-          "%+.1f/yr\n(p%s)",
+          "%+.1f/yr\n(P%s)",
           .data$slope_papers_yr,
-          dplyr::case_when(
-            .data$p_value < 0.001 ~ "<.001",
-            .data$p_value < 0.10  ~ sprintf("=%.3f", .data$p_value),
-            TRUE                   ~ sprintf("=%.2f", .data$p_value)
-          )
+          vapply(.data$p_value, .fmt_pvalue, character(1L))
         ),
         label_x = (.data$seg_start + .data$seg_end) / 2,
         mesh_subcorpus = factor(.data$mesh_subcorpus,
@@ -13385,7 +13471,7 @@ compute_burden_normalized_output <- function(
   list(
     year_start          = 1975L,
     year_end            = as.integer(format(Sys.Date(), "%Y")),
-    focal_subspecialty  = "FPMRS",
+    focal_subspecialty  = "URPS",
     alpha               = 0.05,
     correction_method   = "BH",
     seed                = 42L,
