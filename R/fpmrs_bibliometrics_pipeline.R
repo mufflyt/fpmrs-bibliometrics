@@ -1538,7 +1538,100 @@ make_eras <- function(year_start, year_end) {
 }
 
 #' @noRd
+#' ISO 3166-1 alpha-2 to canonical country name
+#'
+#' OpenAlex reports affiliation countries as two-letter ISO codes, while the
+#' rest of the pipeline (income tiers, display labels) keys on full upper-case
+#' names. Without this bridge every non-US record fell through
+#' \code{.wb_income_tier()} as NA: 72.8% of the corpus was "unmapped", the
+#' high-income share collapsed to the US share alone, and the abstract
+#' reported "0.0% from lower- or low-income countries" as if it were a
+#' finding.
+#'
+#' Names here must match the vocabulary used by \code{.wb_income_tier()}.
+#' @noRd
+.ISO2_TO_COUNTRY <- c(
+  US = "USA",                 GB = "UNITED KINGDOM",
+  CN = "CHINA",               IT = "ITALY",
+  AU = "AUSTRALIA",           JP = "JAPAN",
+  CA = "CANADA",              TR = "TURKEY",
+  BR = "BRAZIL",              NL = "NETHERLANDS",
+  DE = "GERMANY",             FR = "FRANCE",
+  TW = "TAIWAN",              KR = "SOUTH KOREA",
+  ES = "SPAIN",               SE = "SWEDEN",
+  IN = "INDIA",               DK = "DENMARK",
+  IL = "ISRAEL",              CH = "SWITZERLAND",
+  IR = "IRAN",                NO = "NORWAY",
+  BE = "BELGIUM",             PL = "POLAND",
+  AT = "AUSTRIA",             EG = "EGYPT",
+  FI = "FINLAND",             GR = "GREECE",
+  PT = "PORTUGAL",            IE = "IRELAND",
+  NZ = "NEW ZEALAND",         CZ = "CZECH REPUBLIC",
+  TH = "THAILAND",            SA = "SAUDI ARABIA",
+  ZA = "SOUTH AFRICA",        MX = "MEXICO",
+  SG = "SINGAPORE",           NG = "NIGERIA",
+  PK = "PAKISTAN",            RU = "RUSSIA",
+  ET = "ETHIOPIA",            MY = "MALAYSIA",
+  SI = "SLOVENIA",            RO = "ROMANIA",
+  ID = "INDONESIA",           HR = "CROATIA",
+  RS = "SERBIA",              CL = "CHILE",
+  NP = "NEPAL",               AR = "ARGENTINA",
+  AE = "UNITED ARAB EMIRATES", HU = "HUNGARY",
+  BD = "BANGLADESH",          HK = "HONG KONG",
+  CO = "COLOMBIA",            SK = "SLOVAKIA",
+  JO = "JORDAN",              LB = "LEBANON",
+  LK = "SRI LANKA",           LT = "LITHUANIA",
+  TN = "TUNISIA",             MA = "MOROCCO",
+  CD = "DEMOCRATIC REPUBLIC OF CONGO", QA = "QATAR",
+  PH = "PHILIPPINES",         TZ = "TANZANIA",
+  VN = "VIETNAM",             IQ = "IRAQ",
+  UG = "UGANDA",              BG = "BULGARIA",
+  IS = "ICELAND",             PS = "PALESTINE",
+  UA = "UKRAINE",             KE = "KENYA",
+  OM = "OMAN",                GH = "GHANA",
+  KZ = "KAZAKHSTAN",          MK = "NORTH MACEDONIA",
+  KW = "KUWAIT",              UY = "URUGUAY",
+  GD = "GRENADA",             LV = "LATVIA",
+  CM = "CAMEROON",            CY = "CYPRUS",
+  JM = "JAMAICA",             SY = "SYRIA",
+  CW = "CURACAO",             EE = "ESTONIA",
+  KH = "CAMBODIA",            PR = "PUERTO RICO",
+  SD = "SUDAN",               VE = "VENEZUELA",
+  BH = "BAHRAIN",             EC = "ECUADOR",
+  MW = "MALAWI",              SM = "SAN MARINO",
+  BA = "BOSNIA",              BY = "BELARUS",
+  DZ = "ALGERIA",             LU = "LUXEMBOURG",
+  MO = "MACAO",               PE = "PERU",
+  RE = "REUNION",             TT = "TRINIDAD AND TOBAGO",
+  YE = "YEMEN",               AF = "AFGHANISTAN",
+  AG = "ANTIGUA AND BARBUDA", AL = "ALBANIA",
+  BB = "BARBADOS",            BO = "BOLIVIA",
+  GE = "GEORGIA",             GI = "GIBRALTAR",
+  KN = "SAINT KITTS AND NEVIS", LY = "LIBYA",
+  MG = "MADAGASCAR",          MT = "MALTA",
+  NE = "NIGER",               PA = "PANAMA",
+  RW = "RWANDA",              SS = "SOUTH SUDAN",
+  ZM = "ZAMBIA",              AD = "ANDORRA",
+  AM = "ARMENIA",             AS = "AMERICAN SAMOA",
+  BF = "BURKINA FASO",        BN = "BRUNEI",
+  CI = "IVORY COAST",         CR = "COSTA RICA",
+  GF = "FRENCH GUIANA",       GN = "GUINEA",
+  GT = "GUATEMALA",           GU = "GUAM",
+  KY = "CAYMAN ISLANDS",      ME = "MONTENEGRO",
+  MQ = "MARTINIQUE",          NI = "NICARAGUA",
+  SN = "SENEGAL",             UZ = "UZBEKISTAN",
+  VG = "BRITISH VIRGIN ISLANDS", WS = "SAMOA",
+  XK = "KOSOVO",              ZW = "ZIMBABWE"
+)
+
 .normalize_country_string <- function(country_upper) {
+  # OpenAlex supplies ISO-2 codes; expand them before variant consolidation
+  # so both retrieval paths converge on the same canonical names.
+  iso_hit <- !is.na(country_upper) &
+    nchar(country_upper) == 2L &
+    country_upper %in% names(.ISO2_TO_COUNTRY)
+  country_upper[iso_hit] <- unname(.ISO2_TO_COUNTRY[country_upper[iso_hit]])
+
   # Consolidates known variant spellings that bibliometrix produces from
   # C1 affiliation strings. All variants mapped to one canonical name.
   dplyr::case_when(
@@ -4163,7 +4256,11 @@ remove_self_citations <- function(bibliography, verbose = TRUE) {
     "SAUDI ARABIA","UAE","UNITED ARAB EMIRATES","QATAR","BAHRAIN","KUWAIT",
     "OMAN","CHILE","URUGUAY","PANAMA","TRINIDAD AND TOBAGO",
     "ANTIGUA AND BARBUDA","BARBADOS","SAINT KITTS AND NEVIS","HONG KONG",
-    "MACAO","TAIWAN","ANDORRA","LIECHTENSTEIN","MONACO","SAN MARINO"
+    "MACAO","TAIWAN","ANDORRA","LIECHTENSTEIN","MONACO","SAN MARINO",
+    # Territories and dependencies appearing in the corpus as ISO-2 codes.
+    "CURACAO","PUERTO RICO","REUNION","GIBRALTAR","BRUNEI",
+    "FRENCH GUIANA","GUAM","CAYMAN ISLANDS","MARTINIQUE",
+    "BRITISH VIRGIN ISLANDS"
   )
   upper_mid <- c(
     "CHINA","BRAZIL","MEXICO","RUSSIA","TURKEY","ARGENTINA","COLOMBIA",
@@ -4173,7 +4270,8 @@ remove_self_citations <- function(bibliography, verbose = TRUE) {
     "CUBA","DOMINICAN REPUBLIC","ECUADOR","EL SALVADOR","GUATEMALA",
     "JAMAICA","PARAGUAY","VENEZUELA","FIJI","PALAU","NAURU",
     "EQUATORIAL GUINEA","GABON","BOTSWANA","NAMIBIA","TUNISIA",
-    "ALGERIA","EGYPT","MOROCCO","LIBYA","AMERICAN SAMOA","TUVALU"
+    "ALGERIA","EGYPT","MOROCCO","LIBYA","AMERICAN SAMOA","TUVALU",
+    "GRENADA","COSTA RICA","MONTENEGRO","KOSOVO"
   )
   lower_mid <- c(
     "INDIA","PAKISTAN","BANGLADESH","NIGERIA","KENYA","UKRAINE","PHILIPPINES",
@@ -4184,7 +4282,7 @@ remove_self_citations <- function(bibliography, verbose = TRUE) {
     "MAURITANIA","MOROCCO","CABO VERDE","DJIBOUTI",
     "MICRONESIA","KIRIBATI","SOLOMON ISLANDS","VANUATU","TIMOR-LESTE",
     "COMOROS","SAO TOME AND PRINCIPE","LESOTHO","ESWATINI",
-    "BENIN"
+    "BENIN","PALESTINE","SAMOA"
   )
   low <- c(
     "AFGHANISTAN","CHAD","CENTRAL AFRICAN REPUBLIC","DEMOCRATIC REPUBLIC OF CONGO",
@@ -4905,7 +5003,13 @@ export_citespace_network <- function(
   }
 
   co_col    <- bibliography$AU_CO
-  has_data  <- !is.na(co_col) & nchar(trimws(co_col)) > 0L
+  # The literal strings "NA"/"NULL" are missing-country placeholders, not
+  # countries. Leaving them in the denominator inflated "unmapped" and
+  # diluted every income share. plot_country_contributions() already
+  # filters them the same way.
+  has_data  <- !is.na(co_col) &
+    nchar(trimws(co_col)) > 0L &
+    !toupper(trimws(co_col)) %in% c("NA", "NULL")
   co_valid  <- co_col[has_data]
   n_papers  <- length(co_valid)
 
@@ -5719,6 +5823,13 @@ generate_abstract_results_text <- function(
   n_obgyn_subspecialties <- nrow(comparison_summary_table) -
     nrow(urology_row)
 
+  # Two different senses, previously served by one label:
+  #   cohort_label      -- the whole analysed set, focal INCLUDED
+  #                        ("...among the N analysed")
+  #   comparator_label  -- what the focal is measured against, focal EXCLUDED
+  #                        ("benchmarked against...", "surpassing all...")
+  # Using the cohort count for the comparator sense counted the focal
+  # subspecialty as one of its own comparators, overstating them by one.
   cohort_label <- if (nrow(urology_row) > 0L) {
     sprintf(
       "%d OB/GYN subspecialt%s and urology",
@@ -5731,17 +5842,35 @@ generate_abstract_results_text <- function(
             ifelse(n_sp_cohort == 1L, "y", "ies"))
   }
 
+  comparator_rows <- dplyr::filter(
+    comparison_summary_table,
+    .data$subspecialty != focal_subspecialty
+  )
+  n_urology_comparators <- sum(
+    grepl("urology", tolower(comparator_rows$subspecialty))
+  )
+  n_obgyn_comparators <- nrow(comparator_rows) - n_urology_comparators
+
+  comparator_label <- if (n_urology_comparators > 0L) {
+    sprintf(
+      "%d OB/GYN subspecialt%s and urology",
+      n_obgyn_comparators,
+      ifelse(n_obgyn_comparators == 1L, "y", "ies")
+    )
+  } else {
+    sprintf("%d OB/GYN subspecialt%s", n_obgyn_comparators,
+            ifelse(n_obgyn_comparators == 1L, "y", "ies"))
+  }
+
   # ---- Manuscript title ----
-  n_comparators_title <- nrow(comparison_summary_table) - 1L
-  has_urology_title   <- nrow(urology_row) > 0L
-  comparator_desc_title <- if (has_urology_title) {
+  comparator_desc_title <- if (n_urology_comparators > 0L) {
     sprintf("%d obstetrics and gynecology subspecialt%s and urology",
-            n_comparators_title,
-            ifelse(n_comparators_title == 1L, "y", "ies"))
+            n_obgyn_comparators,
+            ifelse(n_obgyn_comparators == 1L, "y", "ies"))
   } else {
     sprintf("%d obstetrics and gynecology subspecialt%s",
-            n_comparators_title,
-            ifelse(n_comparators_title == 1L, "y", "ies"))
+            n_obgyn_comparators,
+            ifelse(n_obgyn_comparators == 1L, "y", "ies"))
   }
   s_title <- sprintf(
     paste(
@@ -5776,7 +5905,7 @@ generate_abstract_results_text <- function(
     focal_subspecialty,
     year_start,
     year_end,
-    cohort_label
+    comparator_label
   )
 
   # ---- Sentence: Methods ----
@@ -5796,7 +5925,7 @@ generate_abstract_results_text <- function(
     ),
     data_source,
     focal_subspecialty,
-    nrow(comparison_summary_table) - 1L,
+    nrow(comparator_rows),
     year_start,
     year_end
   )
@@ -5805,13 +5934,13 @@ generate_abstract_results_text <- function(
   s_corpus <- sprintf(
     paste(
       "This analysis identified %s %s publications spanning",
-      "%d-%d, representing the %s largest corpus among the",
+      "%d-%d, representing the %s corpus among the",
       "%s analyzed."
     ),
     fmt_n(focal$total_documents),
     focal_subspecialty,
     year_start, year_end,
-    ordinal_label(focal$rank_by_volume),
+    .rank_size_phrase(focal$rank_by_volume),
     cohort_label
   )
 
@@ -5908,7 +6037,7 @@ generate_abstract_results_text <- function(
         "%s demonstrated the highest compound annual growth rate",
         "in the cohort (%.1f%%), surpassing all %s comparators."
       ),
-      focal_subspecialty, focal_cagr, cohort_label
+      focal_subspecialty, focal_cagr, comparator_label
     )
   } else if (cagr_gap <= cagr_near_tie_threshold) {
     # Near-tie with the leader
@@ -6094,7 +6223,7 @@ generate_abstract_results_text <- function(
 
   breadth_clause <- if (broadest_sp == focal_subspecialty) {
     sprintf(
-      "%s had the broadest international reach in the cohort,",
+      "%s had the broadest international reach in the cohort;",
       focal_subspecialty
     )
   } else {
@@ -6162,10 +6291,10 @@ generate_abstract_results_text <- function(
     top_inst_pubs <- focal_institution_metrics$publication_count[[1L]]
     sprintf(
       paste(
-        "%s was the most productive institution in %s",
+        "%s was the most productive affiliation in %s",
         "literature, contributing %s publications."
       ),
-      stringr::str_to_title(top_inst),
+      .clean_affiliation(top_inst),
       focal_subspecialty,
       fmt_n(top_inst_pubs)
     )
@@ -6809,11 +6938,11 @@ generate_abstract_results_text <- function(
     growth_clause <- if (!is.na(focal_cagr)) {
       vol_rank_word <- if ("rank_by_volume" %in% names(focal) &&
                            !is.na(focal$rank_by_volume))
-        ordinal_label(focal$rank_by_volume) else NULL
+        .rank_size_phrase(focal$rank_by_volume) else NULL
       if (!is.null(vol_rank_word)) {
         sprintf(
           paste(
-            "%s produced the %s largest publication corpus in the cohort",
+            "%s produced the %s publication corpus in the cohort",
             "with a %.1f%% compound annual growth rate (CAGR), consistent",
             "with expanding clinical demand and documented workforce shortages"
           ),
@@ -7638,6 +7767,48 @@ compute_comparison_statistics <- function(
   out <- stringr::str_replace_all(out, "(?<=\\s)For\\b", "for")
   out <- stringr::str_replace_all(out, "(?<=\\s)In\\b",  "in")
   out
+}
+
+#' Reduce a raw affiliation string to a readable institution name
+#'
+#' institution_metrics holds whole affiliation strings, e.g.
+#' "DEPARTMENT OF SPORTS MEDICINE, NORWEGIAN SCHOOL OF SPORT SCIENCES, OSLO,
+#' NORWAY." Dropping it into prose verbatim produced two defects: the
+#' trailing period made the abstract's sentence-capitalisation rule fire
+#' mid-sentence ("...Norway. Was the most productive..."), and plain
+#' str_to_title() yielded "Department Of Sports Medicine".
+#'
+#' Leading sub-unit segments (Department/Division/Section of ...) are
+#' dropped so the institution itself is named, and the trailing city and
+#' country are discarded.
+#' @noRd
+.clean_affiliation <- function(x) {
+  if (is.na(x) || !nzchar(trimws(x))) return(NA_character_)
+
+  s <- trimws(sub("[.]\\s*$", "", x))          # trailing period
+  parts <- trimws(strsplit(s, ",")[[1L]])
+  parts <- parts[nzchar(parts)]
+  if (length(parts) == 0L) return(NA_character_)
+
+  # Skip sub-unit prefixes; keep the first segment naming an organisation.
+  is_subunit <- grepl(
+    "^(DEPT|DEPARTMENT|DIVISION|SECTION|SERVICE|UNIT|LABORATORY|LAB)\\b",
+    toupper(parts)
+  )
+  keep <- parts[!is_subunit]
+  institution <- if (length(keep) > 0L) keep[[1L]] else parts[[1L]]
+
+  .title_case_journal(institution)
+}
+
+#' Size-rank phrase: "largest" for rank 1, "3rd largest" otherwise
+#'
+#' ordinal_label() alone rendered rank 1 as "the 1st largest corpus", which
+#' is redundant -- "largest" already means rank 1.
+#' @noRd
+.rank_size_phrase <- function(rank) {
+  if (is.na(rank)) return("largest")
+  if (rank == 1L) "largest" else paste(ordinal_label(rank), "largest")
 }
 
 .fmt_pvalue <- function(p) {

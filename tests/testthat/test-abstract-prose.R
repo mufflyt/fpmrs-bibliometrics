@@ -185,3 +185,96 @@ test_that("cohort label pluralises correctly and counts urology separately", {
   expect_match(ab$corpus, "URPS", fixed = TRUE)
   expect_match(ab$corpus, "10,000", fixed = TRUE)
 })
+
+# ---- Prose defects found by reading a real generated abstract -----------
+
+test_that("affiliation strings are reduced to a readable institution", {
+  # Raw institution_metrics rows are whole affiliation strings. Used
+  # verbatim they produced "Department Of Sports Medicine, Norwegian School
+  # Of Sport Sciences, Oslo, Norway. Was the most productive institution..."
+  expect_equal(
+    .clean_affiliation(
+      "DEPARTMENT OF SPORTS MEDICINE, NORWEGIAN SCHOOL OF SPORT SCIENCES, OSLO, NORWAY."
+    ),
+    "Norwegian School of Sport Sciences"
+  )
+  expect_equal(
+    .clean_affiliation("DEPARTMENT OF UROGYNAECOLOGY, KING'S COLLEGE HOSPITAL, LONDON, UK."),
+    "King's College Hospital"
+  )
+  expect_equal(.clean_affiliation("MAYO CLINIC"), "Mayo Clinic")
+  expect_true(is.na(.clean_affiliation(NA_character_)))
+  expect_true(is.na(.clean_affiliation("")))
+})
+
+test_that("the institution sentence has no stray mid-sentence capital", {
+  inst <- tibble::tibble(
+    institution = "DEPARTMENT OF SPORTS MEDICINE, NORWEGIAN SCHOOL OF SPORT SCIENCES, OSLO, NORWAY.",
+    publication_count = 39L
+  )
+  ab <- generate_abstract_results_text(
+    fixture_comparison_table(), focal_subspecialty = "URPS",
+    focal_institution_metrics = inst,
+    year_start = 1975L, year_end = 2024L, verbose = FALSE
+  )
+  expect_match(ab$institution, "Norwegian School of Sport Sciences", fixed = TRUE)
+  expect_false(grepl(". Was the most", ab$institution, fixed = TRUE))
+  expect_false(grepl("Department Of", ab$institution, fixed = TRUE))
+})
+
+test_that("comparator counts exclude the focal subspecialty", {
+  # URPS + MFM + Urology means ONE OB/GYN comparator, not two. Counting the
+  # focal as its own comparator overstated the cohort in title and intro.
+  ab <- generate_abstract_results_text(
+    fixture_comparison_table(), focal_subspecialty = "URPS",
+    year_start = 1975L, year_end = 2024L, verbose = FALSE
+  )
+  expect_match(ab$title, "1 obstetrics and gynecology subspecialty and urology",
+               fixed = TRUE)
+  expect_false(grepl("2 obstetrics and gynecology subspecialties and urology",
+                     ab$title, fixed = TRUE))
+})
+
+test_that("the analysed-cohort count still includes the focal subspecialty", {
+  # "among the N analysed" is the full set; only the comparator sense drops
+  # the focal row.
+  ab <- generate_abstract_results_text(
+    fixture_comparison_table(), focal_subspecialty = "URPS",
+    year_start = 1975L, year_end = 2024L, verbose = FALSE
+  )
+  expect_match(ab$corpus, "2 obstetrics and gynecology subspecialties and urology",
+               fixed = TRUE)
+})
+
+test_that("rank 1 reads as 'largest', not '1st largest'", {
+  tbl <- fixture_comparison_table()
+  tbl$rank_by_volume <- c(1L, 2L, 3L)
+  ab <- generate_abstract_results_text(
+    tbl, focal_subspecialty = "URPS",
+    year_start = 1975L, year_end = 2024L, verbose = FALSE
+  )
+  expect_match(ab$corpus, "the largest corpus", fixed = TRUE)
+  expect_false(grepl("1st largest", ab$corpus, fixed = TRUE))
+})
+
+test_that("a non-first rank keeps its ordinal", {
+  ab <- generate_abstract_results_text(
+    fixture_comparison_table(), focal_subspecialty = "URPS",
+    year_start = 1975L, year_end = 2024L, verbose = FALSE
+  )
+  expect_match(ab$corpus, "3rd largest corpus", fixed = TRUE)
+})
+
+test_that("the geography sentence is not a comma splice", {
+  # The focal-is-broadest branch ended its clause with "," against a
+  # following independent clause; the sibling branch used ";".
+  tbl <- fixture_comparison_table()
+  tbl$unique_countries <- c(200L, 100L, 90L)   # focal has widest reach
+  ab <- generate_abstract_results_text(
+    tbl, focal_subspecialty = "URPS",
+    year_start = 1975L, year_end = 2024L, verbose = FALSE
+  )
+  expect_match(ab$geography, "broadest international reach in the cohort;",
+               fixed = TRUE)
+  expect_false(grepl("in the cohort, [0-9]", ab$geography))
+})
