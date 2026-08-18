@@ -37,3 +37,6 @@ manuscript/*.pdf
 manuscript/*_files/
 manuscript/*.knit.md
 manuscript/*.utf8.md
+
+# Rendered submission manuscript (build product of manuscript/render.R journal)
+output/URPS_bibliometrics_manuscript.docx

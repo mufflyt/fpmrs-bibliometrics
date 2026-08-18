@@ -441,10 +441,11 @@
   )
   assertthat::assert_that(assertthat::is.string(figure_format))
   assertthat::assert_that(
-    figure_format %in% c("pdf", "png", "svg"),
+    figure_format %in% .SUPPORTED_FIGURE_FORMATS,
     msg = paste(
-      "`figure_format` must be one of: 'pdf', 'png', 'svg'.",
-      "Received:", figure_format
+      "`figure_format` must be one of:",
+      paste(sprintf("'%s'", .SUPPORTED_FIGURE_FORMATS), collapse = ", "),
+      "- received:", figure_format
     )
   )
   assertthat::assert_that(assertthat::is.number(figure_width))
@@ -1772,6 +1773,62 @@ make_eras <- function(year_start, year_end) {
     )
 }
 
+#' Formats a figure may be written in
+#' @noRd
+.SUPPORTED_FIGURE_FORMATS <- c("pdf", "png", "svg", "jpeg", "jpg", "tiff")
+
+#' Raster formats have no alpha channel worth relying on
+#'
+#' JPEG in particular cannot store transparency: without an explicit white
+#' background the plot area is composited onto black by some viewers.
+#' @noRd
+.RASTER_FIGURE_FORMATS <- c("png", "jpeg", "jpg", "tiff")
+
+#' Device arguments for a given figure format
+#' @noRd
+.figure_device_args <- function(format) {
+  args <- list()
+  if (format %in% .RASTER_FIGURE_FORMATS) {
+    args$bg <- "white"
+  }
+  if (format %in% c("jpeg", "jpg")) {
+    # The device default (75) shows visible artefacts on thin plot lines and
+    # small axis text at print size.
+    args$quality <- 95
+  }
+  args
+}
+
+#' Write one figure in one format
+#' @noRd
+.save_one_figure <- function(figure_object, figure_name, output_dir,
+                             format, width, height, verbose) {
+  output_file_path <- file.path(
+    output_dir, paste0(figure_name, ".", format)
+  )
+
+  do.call(
+    ggplot2::ggsave,
+    c(
+      list(
+        filename = output_file_path,
+        plot     = figure_object,
+        width    = width,
+        height   = height,
+        dpi      = 300,
+        units    = "in"
+      ),
+      .figure_device_args(format)
+    )
+  )
+
+  resolved_path <- normalizePath(output_file_path)
+  .log_step(sprintf(
+    "[SAVE]  %-32s -> %s", figure_name, resolved_path
+  ), verbose)
+  resolved_path
+}
+
 #' @noRd
 .save_all_figures <- function(
     figures_list,
@@ -1779,48 +1836,67 @@ make_eras <- function(year_start, year_end) {
     figure_format,
     figure_width,
     figure_height,
-    verbose
+    verbose,
+    additional_formats = character(0)
 ) {
   assertthat::assert_that(is.list(figures_list))
   assertthat::assert_that(length(figures_list) > 0,
     msg = "`figures_list` is empty; nothing to save.")
 
-  if (figure_format == "svg") {
+  additional_formats <- setdiff(
+    unique(tolower(as.character(additional_formats))), figure_format
+  )
+  all_formats <- c(figure_format, additional_formats)
+
+  unknown <- setdiff(all_formats, .SUPPORTED_FIGURE_FORMATS)
+  assertthat::assert_that(
+    length(unknown) == 0L,
+    msg = sprintf(
+      "Unsupported figure format(s): %s. Supported: %s.",
+      paste(unknown, collapse = ", "),
+      paste(.SUPPORTED_FIGURE_FORMATS, collapse = ", ")
+    )
+  )
+
+  if ("svg" %in% all_formats) {
     assertthat::assert_that(
       requireNamespace("svglite", quietly = TRUE),
       msg = paste(
         "Saving figures as SVG requires the 'svglite' package.",
         "Install it with: install.packages('svglite')",
-        "Or choose figure_format = 'pdf' or 'png' instead."
+        "Or choose a different figure format."
       )
     )
   }
 
+  # Primary-format paths are the return value so every existing caller and
+  # the output manifest keep working; the companion formats are recorded as
+  # an attribute for anything that wants the full set.
   figure_paths_vector <- purrr::imap_chr(
     figures_list,
     function(figure_object, figure_name) {
-      output_file_name <- paste0(figure_name, ".", figure_format)
-      output_file_path <- file.path(output_dir, output_file_name)
-
-      ggplot2::ggsave(
-        filename = output_file_path,
-        plot     = figure_object,
-        width    = figure_width,
-        height   = figure_height,
-        dpi      = 300,
-        units    = "in"
+      .save_one_figure(
+        figure_object, figure_name, output_dir,
+        figure_format, figure_width, figure_height, verbose
       )
-
-      resolved_path <- normalizePath(output_file_path)
-      .log_step(sprintf(
-        "[SAVE]  %-32s -> %s", figure_name, resolved_path
-      ), verbose)
-
-      return(resolved_path)
     }
   )
 
-  return(figure_paths_vector)
+  companion_paths <- lapply(additional_formats, function(fmt) {
+    purrr::imap_chr(
+      figures_list,
+      function(figure_object, figure_name) {
+        .save_one_figure(
+          figure_object, figure_name, output_dir,
+          fmt, figure_width, figure_height, verbose
+        )
+      }
+    )
+  })
+  names(companion_paths) <- additional_formats
+
+  attr(figure_paths_vector, "companion_paths") <- companion_paths
+  figure_paths_vector
 }
 
 
@@ -8959,8 +9035,14 @@ compute_comparative_funding <- function(
 #'   in abstract text. Defaults to \code{2000L}.
 #' @param year_end Integer. Last year of the analysis window. Defaults
 #'   to the current year.
-#' @param figure_format Character. One of \code{"pdf"}, \code{"png"},
-#'   \code{"svg"}. Defaults to \code{"pdf"}.
+#' @param figure_format Character. Primary output format: one of
+#'   \code{"pdf"}, \code{"png"}, \code{"svg"}, \code{"jpeg"},
+#'   \code{"jpg"}, \code{"tiff"}. Defaults to \code{"pdf"}.
+#' @param additional_formats Character vector. Companion formats written
+#'   alongside \code{figure_format}; defaults to \code{"jpeg"} so every
+#'   figure is available both as vector art for typesetting and as a raster
+#'   image for slides, email, and submission portals that reject PDFs.
+#'   Pass \code{character(0)} for the primary format only.
 #' @param figure_width Numeric. Width in inches. Defaults to \code{9}.
 #' @param figure_height Numeric. Height in inches. Defaults to
 #'   \code{6}.
@@ -9035,6 +9117,7 @@ run_subspecialty_comparison <- function(
     year_start                = 1975L,
     year_end           = as.integer(format(Sys.Date(), "%Y")),
     figure_format      = "pdf",
+    additional_formats = "jpeg",
     figure_width       = 9,
     figure_height      = 6,
     log_scale_trends   = TRUE,
@@ -9060,9 +9143,12 @@ run_subspecialty_comparison <- function(
     msg = "`verbose` must be TRUE or FALSE."
   )
   assertthat::assert_that(
-    figure_format %in% c("pdf", "png", "svg"),
-    msg = paste("`figure_format` must be 'pdf', 'png', or 'svg'.",
-                "Received:", figure_format)
+    figure_format %in% .SUPPORTED_FIGURE_FORMATS,
+    msg = paste(
+      "`figure_format` must be one of:",
+      paste(sprintf("'%s'", .SUPPORTED_FIGURE_FORMATS), collapse = ", "),
+      "- received:", figure_format
+    )
   )
   assertthat::assert_that(
     is.finite(figure_width) && figure_width > 0,
@@ -9177,12 +9263,13 @@ run_subspecialty_comparison <- function(
   # ---- Step 4: Save figures ----
   .log_step("\n--- STEP 4: Save Comparison Figures ---", verbose)
   comparison_figure_paths <- .save_all_figures(
-    figures_list  = comparison_figures,
-    output_dir    = output_dir,
-    figure_format = figure_format,
-    figure_width  = figure_width,
-    figure_height = figure_height,
-    verbose       = verbose
+    figures_list       = comparison_figures,
+    output_dir         = output_dir,
+    figure_format      = figure_format,
+    figure_width       = figure_width,
+    figure_height      = figure_height,
+    verbose            = verbose,
+    additional_formats = additional_formats
   )
 
   # ---- Step 5: Abstract text ----
@@ -11024,10 +11111,17 @@ plot_citation_metrics_by_era <- function(
 #'   geographic contributions figure. Defaults to \code{10L}.
 #' @param top_n_journals Integer. Number of journals to display in the
 #'   journal dominance figure. Defaults to \code{8L}.
-#' @param figure_format Character string. Output format for all saved
-#'   figures. One of \code{"pdf"}, \code{"png"}, or \code{"svg"}.
-#'   \code{"pdf"} is recommended for journal submission. Defaults to
-#'   \code{"pdf"}.
+#' @param figure_format Character string. Primary output format for all
+#'   saved figures. One of \code{"pdf"}, \code{"png"}, \code{"svg"},
+#'   \code{"jpeg"}, \code{"jpg"}, or \code{"tiff"}. \code{"pdf"} is
+#'   recommended for journal submission. Defaults to \code{"pdf"}.
+#' @param additional_formats Character vector. Companion formats written
+#'   alongside \code{figure_format}; defaults to \code{"jpeg"} so every
+#'   figure is available both as vector art for typesetting and as a raster
+#'   image for slides, email, and submission portals that reject PDFs.
+#'   JPEGs are written at 300 dpi, quality 95, on an explicit white
+#'   background (JPEG cannot store transparency). Pass \code{character(0)}
+#'   for the primary format only.
 #' @param figure_width Numeric. Figure width in inches. Defaults to
 #'   \code{7}.
 #' @param figure_height Numeric. Figure height in inches. Defaults to
@@ -11191,6 +11285,7 @@ run_fpmrs_bibliometric_pipeline <- function(
     top_n_authors   = 20L,
     top_n_institutions = 20L,
     figure_format   = "pdf",
+    additional_formats = "jpeg",
     figure_width    = 7,
     figure_height   = 5,
     english_only    = TRUE,
@@ -11615,12 +11710,13 @@ run_fpmrs_bibliometric_pipeline <- function(
   # ----------------------------------------------------------
   .log_step("\n--- STEP 6: Save Figures to Disk ---", verbose)
   saved_figure_paths <- .save_all_figures(
-    figures_list  = pipeline_figures,
-    output_dir    = output_dir,
-    figure_format = figure_format,
-    figure_width  = figure_width,
-    figure_height = figure_height,
-    verbose       = verbose
+    figures_list       = pipeline_figures,
+    output_dir         = output_dir,
+    figure_format      = figure_format,
+    figure_width       = figure_width,
+    figure_height      = figure_height,
+    verbose            = verbose,
+    additional_formats = additional_formats
   )
 
   # ----------------------------------------------------------

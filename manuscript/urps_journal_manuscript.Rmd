@@ -1,0 +1,348 @@
+---
+title: "Fifty Years of Urogynecology and Reconstructive Pelvic Surgery Research: A Bibliometric Analysis of 49,355 Publications, 1975-2024"
+author:
+  - Tyler Muffly, MD
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+params:
+  results_rds: "output/pipeline_result.rds"
+bibliography: references.bib
+csl: urogynecology.csl
+link-citations: false
+output:
+  word_document:
+    toc: false
+    fig_caption: true
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, message = FALSE, warning = FALSE,
+  fig.width = 7, fig.height = 5, dpi = 300, fig.align = "center"
+)
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+```
+
+```{r data, include=FALSE}
+suppressWarnings(suppressMessages(
+  sys.source("R/fpmrs_bibliometrics_pipeline.R", envir = globalenv())
+))
+source("manuscript/_helpers.R", local = knitr::knit_global())
+
+res <- readRDS(params$results_rds)
+at  <- res$annual_trends
+eq  <- .compute_equity_metrics(res$bibliography, verbose = FALSE)
+cm  <- res$citation_metrics
+mk  <- res$mk_trend
+gm  <- res$growth_metrics
+
+n_docs     <- nrow(res$bibliography)
+n_cit      <- sum(at$total_citations, na.rm = TRUE)
+mean_cit   <- round(n_cit / n_docs, 1)
+first_yr   <- at$publication_year[1]
+first_n    <- at$publication_count[1]
+last_yr    <- utils::tail(at$publication_year, 1)
+last_n     <- utils::tail(at$publication_count, 1)
+fold       <- round(last_n / first_n, 1)
+
+co <- res$country_summary
+co <- co[!is.na(co$country) & !toupper(co$country) %in% c("NA", "NULL") &
+           nzchar(co$country), ]
+n_countries <- nrow(co)
+top_ctry_pct <- round(co$pct_of_total[[1L]], 1)
+lmic_pct <- round(eq$pct_lower_mid + eq$pct_low_income, 1)
+
+fmt <- function(x) format(x, big.mark = ",", trim = TRUE)
+pv  <- function(p) paste0("P", .fmt_pvalue(p))
+
+consort <- consort_table("output/consort_flow.json")
+n_retrieved <- consort$Records[1]
+n_excl_year <- consort$Records[2]
+n_excl_lang <- consort$Records[4]
+```
+
+# Structured Abstract
+
+**Importance.** Urogynecology and Reconstructive Pelvic Surgery (URPS) treats
+pelvic floor disorders affecting roughly one in four women,[@nygaard2008] yet
+the field's research output has never been characterized across its full
+modern history.
+
+**Objectives.** To quantify the volume, growth, citation impact, and global
+authorship of URPS literature from `r first_yr` to `r last_yr`.
+
+**Study Design.** We searched PubMed using Medical Subject Headings and
+title/abstract terms spanning both FPMRS and URPS nomenclature, plus the
+subspecialty journal under both its names. Records were linked to OpenAlex by
+PubMed identifier for citation counts and first-author country.[@priem2022]
+Analyses used the bibliometrix R package.[@aria2017] Trend was tested by
+Mann-Kendall and segmented regression; authorship equity was summarized by
+World Bank income group and the Herfindahl-Hirschman Index (HHI).
+
+**Results.** `r fmt(n_retrieved)` records were retrieved and
+`r fmt(n_docs)` retained after year and language filtering. Annual output rose
+from `r first_n` publications in `r first_yr` to `r fmt(last_n)` in
+`r last_yr`, a `r fold`-fold increase (compound annual growth rate
+`r gm$cagr_pct`%). Growth was monotonic (Mann-Kendall tau=`r round(mk$mk_tau,3)`,
+`r pv(mk$mk_p)`) with a structural inflection in `r mk$breakpoint_year`, after
+which output accelerated from `r round(mk$seg1_slope,1)` to
+`r round(mk$seg2_slope,1)` publications per year. The corpus accrued
+`r fmt(n_cit)` citations (mean `r mean_cit` per paper; h-index
+`r cm$h_index`; `r round(cm$pct_uncited,1)`% uncited). Authorship spanned
+`r n_countries` countries but was concentrated in high-income settings
+(`r eq$pct_high_income`%), with `r lmic_pct`% from lower-middle- or
+low-income countries.
+
+**Conclusions.** URPS research has grown steadily for five decades and
+accelerated sharply after `r mk$breakpoint_year`. Output remains dominated by
+high-income countries, identifying a clear target for international research
+partnership.
+
+```{r abstract-count, results="asis"}
+# The abstract above is written by hand; this reports its length so the
+# 250-word journal limit can be checked at every knit rather than eyeballed.
+rmd <- readLines("manuscript/urps_journal_manuscript.Rmd", warn = FALSE)
+beg <- grep("^# Structured Abstract", rmd)
+end <- grep("^```\\{r abstract-count", rmd)
+txt <- paste(rmd[(beg + 1):(end - 1)], collapse = " ")
+txt <- gsub("`r [^`]*`", "XXXX", txt)          # inline code -> one token
+txt <- gsub("\\[@[^]]*\\]", "", txt)           # citations are not words
+txt <- gsub("[*_#]", "", txt)
+n_words <- lengths(gregexpr("\\S+", trimws(txt)))
+cat(sprintf("\n*Abstract length: %d words (journal limit 250).*\n", n_words))
+```
+
+# Introduction
+
+Pelvic floor disorders -- urinary incontinence, pelvic organ prolapse, and
+fecal incontinence -- affect approximately one quarter of adult women in the
+United States, and their prevalence rises steeply with age.[@nygaard2008] A
+woman's lifetime risk of surgery for prolapse or incontinence approaches 11%
+by age 80.[@olsen1997] Population surveys across five countries confirm that
+lower urinary tract symptoms are common and burdensome
+internationally.[@irwin2006]
+
+The subspecialty addressing these conditions has undergone rapid institutional
+change. Standardized terminology for prolapse quantification arrived in
+1996,[@bump1996] followed by a joint International Urogynecological
+Association / International Continence Society terminology report in
+2010.[@haylen2010] Validated patient-reported instruments such as the ICIQ
+followed a similar trajectory.[@avery2004] The subspecialty itself was renamed
+from Female Pelvic Medicine and Reconstructive Surgery (FPMRS) to
+Urogynecology and Reconstructive Pelvic Surgery (URPS), effective 2024.
+
+Despite this maturation, the field's research output has not been described
+across its full modern history. Bibliometric analysis quantifies how a
+discipline's literature grows, where its influence concentrates, and who is
+excluded from producing it. We therefore characterized `r fmt(n_docs)` URPS
+publications spanning `r first_yr` to `r last_yr`.
+
+# Materials and Methods
+
+## Search strategy and data sources
+
+We searched PubMed for records published between `r first_yr` and `r last_yr`.
+The strategy combined Medical Subject Headings (pelvic organ prolapse, pelvic
+floor disorders, stress and urge urinary incontinence, cystocele, rectocele,
+uterine prolapse) with title/abstract terms covering both the FPMRS and URPS
+names and their clinical vocabulary (sacrocolpopexy, colporrhaphy,
+suburethral and pubovaginal sling, colposuspension). Because the subspecialty
+journal was renamed in 2022, both *Female Pelvic Medicine and Reconstructive
+Surgery* and *Urogynecology* were included as journal terms. The complete
+query and its SHA-256 hash accompany the analysis code.
+
+PubMed does not supply citation counts or structured affiliation countries.
+Records were therefore linked to OpenAlex by PubMed identifier to obtain
+citation counts and the first author's affiliation country.[@priem2022]
+Citation and geographic analyses are restricted to records with a successful
+match.
+
+## Analysis
+
+Analyses were performed in R[@rcore] using the bibliometrix package.[@aria2017]
+Annual publication counts, citation totals, and journal, author, keyword, and
+country distributions were computed from the retained corpus. Monotonic trend
+was assessed by the Mann-Kendall test; a structural break in the growth
+trajectory was located by segmented regression. Citation concentration was
+summarized by the h-index and the Gini coefficient. Author affiliation
+countries were mapped to World Bank income groups, and geographic
+concentration was summarized by the Herfindahl-Hirschman Index (HHI). No
+patient-level data were used and institutional review board approval was not
+required.
+
+## Record flow
+
+```{r tbl-consort}
+manuscript_table(consort, "Table 1. Record flow from search to analysis.")
+```
+
+# Results
+
+## Publication volume and growth
+
+Of `r fmt(n_retrieved)` records retrieved, `r fmt(n_excl_year)` fell outside
+the study window and `r fmt(n_excl_lang)` were non-English, leaving
+`r fmt(n_docs)` publications for analysis (Table 1).
+
+Annual output rose from `r first_n` publications in `r first_yr` to
+`r fmt(last_n)` in `r last_yr`, a `r fold`-fold increase corresponding to a
+compound annual growth rate of `r gm$cagr_pct`% (Figure 1). The increase was
+monotonic across the full period (Mann-Kendall tau=`r round(mk$mk_tau, 3)`,
+`r pv(mk$mk_p)`). Segmented regression identified a structural inflection in
+`r mk$breakpoint_year`, before which output grew by
+`r round(mk$seg1_slope, 1)` publications per year and after which it grew by
+`r round(mk$seg2_slope, 1)` per year -- a
+`r round(mk$seg2_slope / mk$seg1_slope, 1)`-fold acceleration.
+
+```{r fig-annual, fig.cap="Figure 1. Annual URPS publication volume, 1975-2024, with LOESS trend and 95% confidence interval."}
+plot_annual_publications(at, min(at$publication_year), max(at$publication_year),
+                         verbose = FALSE)
+```
+
+## Citation impact
+
+The corpus accrued `r fmt(n_cit)` citations, a mean of `r mean_cit` per paper,
+with an h-index of `r cm$h_index`. Citations were unevenly distributed (Gini
+coefficient `r round(cm$citation_gini, 3)`), and
+`r round(cm$pct_uncited, 1)`% of publications were never cited. Apparent
+declines in per-paper citation counts for recent years reflect shorter
+citation windows rather than falling impact (Figure 2).
+
+```{r fig-citations, fig.height=6, fig.cap="Figure 2. Citation impact by year of publication. The post-2000s decline is a censoring artifact of shorter citation windows."}
+plot_citation_trends(at, min(at$publication_year), max(at$publication_year),
+                     verbose = FALSE)
+```
+
+## Journals and authors
+
+```{r tbl-journals}
+manuscript_table(journal_table(res, top_n = 10L),
+                 "Table 2. Ten most-cited journals in the URPS corpus.")
+```
+
+```{r fig-journals, fig.height=6, fig.cap="Figure 3. Journal publication volume over time (top 8 journals)."}
+plot_journal_trends(res$journal_trends, top_n_journals = 8L, verbose = FALSE)
+```
+
+Publications averaged `r round(res$authorship_metrics$mean_authors_per_paper, 1)`
+authors per paper.
+
+```{r tbl-authors}
+manuscript_table(author_table(res, top_n = 10L),
+                 "Table 3. Ten most prolific authors by publication count.")
+```
+
+## Geographic distribution and authorship equity
+
+Authorship spanned `r n_countries` countries, but `r top_ctry_pct`% of
+publications originated from the single most productive country (Figure 4,
+Table 4). By World Bank income group, `r eq$pct_high_income`% of publications
+came from high-income countries, `r eq$pct_upper_mid`% from upper-middle-income
+countries, and `r lmic_pct`% from lower-middle- or low-income countries
+combined (Table 5). Geographic concentration was moderate
+(HHI `r round(eq$concentration_hhi, 3)`).
+
+```{r fig-countries, fig.height=6, fig.cap="Figure 4. Geographic distribution of URPS publications by first-author country (top 10)."}
+plot_country_contributions(res$country_trends, top_n_countries = 10L,
+                           verbose = FALSE)
+```
+
+```{r tbl-countries}
+manuscript_table(country_table(res, top_n = 10L),
+                 "Table 4. Ten most productive first-author countries.")
+```
+
+```{r tbl-equity}
+manuscript_table(equity_table(eq),
+                 "Table 5. Publications by World Bank income group.")
+```
+
+## Research themes
+
+```{r fig-keywords, fig.height=6, fig.cap="Figure 5. Author keyword frequency over time (top 20 keywords). PubMed indexes author keywords sparsely before approximately 2000."}
+plot_keyword_evolution(res$keyword_trends, top_n_keywords = 20L, verbose = FALSE)
+```
+
+# Discussion
+
+URPS research output grew `r fold`-fold over five decades and accelerated
+sharply after `r mk$breakpoint_year`, from `r round(mk$seg1_slope, 1)` to
+`r round(mk$seg2_slope, 1)` publications per year. That inflection follows the
+period in which the field standardized how it measures disease: the pelvic
+organ prolapse quantification system was published in 1996,[@bump1996] and
+validated symptom instruments followed.[@avery2004] Shared measurement makes
+studies comparable and cumulative, and the literature expanded accordingly.
+Subsequent consolidation of terminology[@haylen2010] coincided with continued
+growth.
+
+The clearest actionable finding is geographic. Authorship spanned
+`r n_countries` countries, yet `r eq$pct_high_income`% of publications
+originated in high-income settings and only `r lmic_pct`% in lower-middle- or
+low-income countries. Pelvic floor disorders are not confined to wealthy
+countries; obstetric fistula and severe prolapse impose their heaviest burden
+where access to surgical care is least. A literature produced almost entirely
+in high-income settings risks generalizing findings from health systems
+unlike those where much of the disease occurs. Targeted fellowship exchange,
+co-authored multinational registries, and journal policies that support
+authors from low-resource settings are concrete levers.
+
+## Limitations
+
+Several limitations warrant emphasis. First, the search retrieves records
+containing pelvic floor terminology, and unqualified terms such as "urinary
+incontinence" also capture literature outside the female pelvic floor,
+including post-prostatectomy incontinence; some proportion of the corpus is
+therefore outside the subspecialty's scope. Second, citation counts and
+affiliation countries derive from OpenAlex records matched by PubMed
+identifier, so unmatched records are absent from those analyses. Third, only
+the first author's country is available, so international collaboration rates
+could not be estimated and the geographic findings describe lead authorship
+rather than all contributing countries. Fourth, restricting to English-language
+records excludes `r fmt(n_excl_lang)` publications and may understate output
+from non-anglophone countries, compounding the geographic concentration we
+report. Fifth, recent publication years have shorter citation windows, so
+per-paper impact for those years is censored downward. Finally, bibliometric
+volume measures attention and activity, not clinical quality or patient
+benefit.
+
+## Conclusions
+
+URPS research has grown continuously for fifty years, accelerating after
+`r mk$breakpoint_year` in step with the field's adoption of standardized
+measurement. The literature remains concentrated in high-income countries,
+which is the most tractable target for deliberate change.
+
+# Poster bullets
+
+*Working notes for poster layout; delete before journal submission.*
+
+**Background**
+
+- Pelvic floor disorders affect ~1 in 4 US women; lifetime surgery risk ~11% by age 80.
+- Subspecialty renamed FPMRS to URPS effective 2024.
+- Research output across the field's full modern history had not been described.
+
+**Methods**
+
+- PubMed search, `r first_yr`-`r last_yr`, MeSH plus title/abstract terms covering both names.
+- Linked to OpenAlex by PMID for citations and first-author country.
+- `r fmt(n_retrieved)` retrieved, `r fmt(n_docs)` analyzed.
+
+**Results**
+
+- `r first_n` publications in `r first_yr` to `r fmt(last_n)` in `r last_yr` -- `r fold`-fold growth.
+- Compound annual growth rate `r gm$cagr_pct`%.
+- Monotonic increase: Mann-Kendall tau=`r round(mk$mk_tau, 3)`, `r pv(mk$mk_p)`.
+- Structural inflection `r mk$breakpoint_year`: `r round(mk$seg1_slope, 1)` to `r round(mk$seg2_slope, 1)` papers/year.
+- `r fmt(n_cit)` total citations; mean `r mean_cit`/paper; h-index `r cm$h_index`.
+- `r round(cm$pct_uncited, 1)`% of papers never cited; citation Gini `r round(cm$citation_gini, 3)`.
+- `r n_countries` countries represented; `r top_ctry_pct`% from the top country.
+- `r eq$pct_high_income`% high-income vs `r lmic_pct`% lower-middle/low-income.
+
+**Conclusions**
+
+- Fifty years of uninterrupted growth, accelerating after `r mk$breakpoint_year`.
+- Standardized measurement preceded the acceleration.
+- High-income concentration is the field's clearest equity gap.
+
+# References

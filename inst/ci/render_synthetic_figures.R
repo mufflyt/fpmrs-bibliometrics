@@ -88,13 +88,25 @@ check_caption <- function(name, plot, path) {
   invisible(TRUE)
 }
 
+# Route through the pipeline's own saver so CI exercises the real export
+# path (primary format plus companions) rather than a parallel ggsave call.
+paths <- suppressWarnings(.save_all_figures(
+  figures_list       = figures,
+  output_dir         = out_dir,
+  figure_format      = "pdf",
+  figure_width       = 7,
+  figure_height      = 5,
+  verbose            = FALSE,
+  additional_formats = "jpeg"
+))
+
 for (nm in names(figures)) {
-  path <- file.path(out_dir, paste0(nm, ".pdf"))
-  suppressWarnings(suppressMessages(
-    ggplot2::ggsave(path, figures[[nm]], width = 7, height = 5, device = "pdf")
-  ))
-  check_caption(nm, figures[[nm]], path)
-  message(sprintf("  wrote %s", path))
+  check_caption(nm, figures[[nm]], paths[[nm]])
 }
 
-message("All figures rendered with intact captions.")
+companions <- attr(paths, "companion_paths")
+message(sprintf(
+  "Wrote %d figures as pdf + %s, all captions intact.",
+  length(paths), paste(names(companions), collapse = ", ")
+))
+for (f in sort(list.files(out_dir))) message("  ", f)

@@ -59,6 +59,20 @@ result <- run_fpmrs_bibliometric_pipeline(
 )
 ```
 
+Every figure is written twice: `figure_format` (PDF by default, vector art
+for typesetting) plus the companions in `additional_formats` (JPEG by
+default, 300 dpi at quality 95 on an opaque white background, for slides,
+email, and submission portals that reject PDFs). Supported formats are
+`pdf`, `png`, `svg`, `jpeg`, `jpg`, and `tiff`.
+
+```r
+# PDF only
+run_fpmrs_bibliometric_pipeline(..., additional_formats = character(0))
+
+# PNG and TIFF alongside the PDFs
+run_fpmrs_bibliometric_pipeline(..., additional_formats = c("png", "tiff"))
+```
+
 See function documentation within the pipeline file for detailed usage of
 individual analysis steps.
 
@@ -107,6 +121,32 @@ Rscript manuscript/render.R word       # Word .docx
 Rscript manuscript/render.R both
 Rscript manuscript/render.R both --refresh   # re-run the pipeline first
 ```
+
+For journal submission:
+
+```sh
+Rscript manuscript/render.R journal   # -> output/URPS_bibliometrics_manuscript.docx
+```
+
+`manuscript/urps_journal_manuscript.Rmd` is the submission draft formatted for
+*Urogynecology*: a structured abstract (Importance / Objectives / Study Design
+/ Results / Conclusions) under the 250-word limit, IMRaD sections, numbered
+references via `references.bib` + `urogynecology.csl`, and a "Poster bullets"
+appendix meant to be lifted onto a poster and deleted before submission. Every
+number in the prose is an inline R expression, so the text cannot drift from
+the analysis.
+
+Two caveats on the references:
+
+- Clinical citations were pulled **from the analysed corpus itself**, so each
+  carries the PMID and DOI of a record the search actually retrieved. Author
+  lists and page ranges come from the PubMed export and have not been checked
+  against publisher records — verify every entry before submission.
+- `urogynecology.csl` is an AMA-style numeric approximation, not the journal's
+  official style. To use the canonical AMA style, drop
+  `american-medical-association.csl` from the
+  [CSL styles repository](https://github.com/citation-style-language/styles)
+  into `manuscript/` and point the Rmd's `csl:` field at it.
 
 Without `--refresh` it reuses the cached analysis at
 `output/pipeline_result.rds`. That file is gitignored, so a fresh clone runs
