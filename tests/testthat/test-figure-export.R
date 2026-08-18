@@ -119,3 +119,60 @@ test_that("JPEG quality is raised above the device default", {
   expect_equal(.figure_device_args("jpg")$quality, 95)
   expect_null(.figure_device_args("png")$quality)
 })
+
+# ---- Journal submission formats ----------------------------------------
+#
+# Urogynecology requires line art as TIFF or EPS at >= 1200 dpi. JPEG is not
+# an accepted submission format, and 300 dpi is the requirement for
+# photographs, not line art.
+
+test_that("TIFF is written at line-art resolution", {
+  skip_if_no_pkg("tiff")
+  d <- withr_tempdir()
+  save_figs(list(fig = make_plot()), d, "tiff", 7, 5,
+            verbose = FALSE, additional_formats = character(0))
+
+  img <- tiff::readTIFF(file.path(d, "fig.tiff"))
+  # 7 x 5 inches at 1200 dpi
+  expect_equal(dim(img)[2], 7 * .LINE_ART_DPI)
+  expect_equal(dim(img)[1], 5 * .LINE_ART_DPI)
+})
+
+test_that("TIFF uses lossless compression rather than none", {
+  # Uncompressed 1200 dpi TIFF is ~150 MB per figure.
+  expect_equal(.figure_device_args("tiff")$compression, "lzw")
+  d <- withr_tempdir()
+  save_figs(list(fig = make_plot()), d, "tiff", 7, 5,
+            verbose = FALSE, additional_formats = character(0))
+  expect_lt(file.size(file.path(d, "fig.tiff")), 20e6)
+})
+
+test_that("EPS is written as a vector file", {
+  d <- withr_tempdir()
+  save_figs(list(fig = make_plot()), d, "eps", 7, 5,
+            verbose = FALSE, additional_formats = character(0))
+  f <- file.path(d, "fig.eps")
+  expect_true(file.exists(f))
+  expect_match(readLines(f, n = 1L), "^%!PS")
+})
+
+test_that("raster preview formats stay at 300 dpi", {
+  # JPEG/PNG are for email and slides, not submission, so they should not
+  # carry the 1200 dpi line-art cost.
+  skip_if_no_pkg("jpeg")
+  d <- withr_tempdir()
+  save_figs(list(fig = make_plot()), d, "jpeg", 7, 5,
+            verbose = FALSE, additional_formats = character(0))
+  img <- jpeg::readJPEG(file.path(d, "fig.jpeg"))
+  expect_equal(dim(img)[2], 7 * 300)
+})
+
+test_that("submission formats can be produced alongside the working PDF", {
+  d <- withr_tempdir()
+  paths <- save_figs(list(fig = make_plot()), d, "pdf", 7, 5,
+                     verbose = FALSE, additional_formats = c("tiff", "eps"))
+  expect_true(all(file.exists(
+    file.path(d, c("fig.pdf", "fig.tiff", "fig.eps"))
+  )))
+  expect_match(paths[[1L]], "[.]pdf$")
+})

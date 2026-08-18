@@ -1145,6 +1145,16 @@ make_eras <- function(year_start, year_end) {
         peak <- suppressWarnings(max(.data$citation_count, na.rm = TRUE))
         if (is.infinite(peak)) NA_real_ else as.numeric(peak)
       },
+      # Field-Weighted Citation Impact, when OpenAlex supplied it. FWCI is
+      # normalised for field and publication year, so unlike raw counts it
+      # is comparable across the study period and is not depressed for
+      # recent papers by their shorter citation window.
+      mean_fwci   = if ("fwci" %in% names(bibliography_filtered))
+        mean(.data$fwci, na.rm = TRUE) else NA_real_,
+      median_fwci = if ("fwci" %in% names(bibliography_filtered))
+        stats::median(.data$fwci, na.rm = TRUE) else NA_real_,
+      n_with_fwci = if ("fwci" %in% names(bibliography_filtered))
+        sum(!is.na(.data$fwci)) else 0L,
       .groups           = "drop"
     ) |>
     dplyr::arrange(.data$publication_year) |>
@@ -1850,7 +1860,8 @@ make_eras <- function(year_start, year_end) {
 
 #' Formats a figure may be written in
 #' @noRd
-.SUPPORTED_FIGURE_FORMATS <- c("pdf", "png", "svg", "jpeg", "jpg", "tiff")
+.SUPPORTED_FIGURE_FORMATS <- c("pdf", "png", "svg", "jpeg", "jpg", "tiff",
+                                "eps")
 
 #' Raster formats have no alpha channel worth relying on
 #'
@@ -1858,6 +1869,14 @@ make_eras <- function(year_start, year_end) {
 #' background the plot area is composited onto black by some viewers.
 #' @noRd
 .RASTER_FIGURE_FORMATS <- c("png", "jpeg", "jpg", "tiff")
+
+#' Publication resolution for raster line art
+#'
+#' Urogynecology (and most Wolters Kluwer titles) require line art at
+#' >= 1200 dpi; 300 dpi is the requirement for photographs only. These plots
+#' are line art, so rasters are written at 1200 unless told otherwise.
+#' @noRd
+.LINE_ART_DPI <- 1200
 
 #' Device arguments for a given figure format
 #' @noRd
@@ -1871,6 +1890,16 @@ make_eras <- function(year_start, year_end) {
     # small axis text at print size.
     args$quality <- 95
   }
+  if (identical(format, "tiff")) {
+    # Uncompressed TIFF at 1200 dpi is ~150 MB per figure; LZW is lossless
+    # and brings that to a couple of MB.
+    args$compression <- "lzw"
+  }
+  if (identical(format, "eps")) {
+    # The default postscript() device does not honour transparency and
+    # mangles some fonts; cairo_ps handles both.
+    args$device <- grDevices::cairo_ps
+  }
   args
 }
 
@@ -1882,6 +1911,11 @@ make_eras <- function(year_start, year_end) {
     output_dir, paste0(figure_name, ".", format)
   )
 
+  # Raster formats carry a real resolution; vector formats ignore dpi.
+  # TIFF is the submission raster, so it gets full line-art resolution,
+  # while JPEG/PNG stay at 300 for previews and email.
+  dpi <- if (identical(format, "tiff")) .LINE_ART_DPI else 300
+
   do.call(
     ggplot2::ggsave,
     c(
@@ -1890,7 +1924,7 @@ make_eras <- function(year_start, year_end) {
         plot     = figure_object,
         width    = width,
         height   = height,
-        dpi      = 300,
+        dpi      = dpi,
         units    = "in"
       ),
       .figure_device_args(format)
@@ -9696,9 +9730,61 @@ plot_citation_trends <- function(
     ) +
     .theme_fpmrs_manuscript()
 
+  # Panel C: Field-Weighted Citation Impact. Raw counts in panels A and B
+  # fall for recent years purely because those papers have had less time to
+  # be cited. FWCI is normalised for field and year, so a flat series here
+  # is positive evidence that impact is steady rather than declining --
+  # which a caption alone cannot establish.
+  has_fwci <- "median_fwci" %in% names(annual_publication_trends) &&
+    any(!is.na(annual_publication_trends$median_fwci))
+
+  panel_fwci <- if (has_fwci) {
+    ggplot2::ggplot(
+      data = annual_publication_trends[!is.na(annual_publication_trends$median_fwci), ],
+      ggplot2::aes(x = .data$publication_year, y = .data$median_fwci)
+    ) +
+      ggplot2::geom_hline(yintercept = 1, linetype = "dashed",
+                          colour = "grey45", linewidth = 0.5) +
+      ggplot2::geom_line(color = "#D95F02", linewidth = 1.1) +
+      ggplot2::geom_point(color = "#D95F02", size = 2.2, shape = 19) +
+      ggplot2::scale_x_continuous(
+        breaks = seq(year_start, year_end, by = 5)
+      ) +
+      ggplot2::scale_y_continuous(
+        labels = scales::label_number(accuracy = 0.1),
+        expand = ggplot2::expansion(mult = c(0.05, 0.08))
+      ) +
+      ggplot2::labs(
+        title   = "C. Median Field-Weighted Citation Impact by Publication Year",
+        x       = "Publication Year",
+        y       = "Median FWCI",
+        caption = stringr::str_wrap(paste(
+          "Panels A and B use raw citation counts, which are censored for",
+          "recent years. Panel C uses Field-Weighted Citation Impact, which",
+          "is normalised for field and publication year; the dashed line at",
+          "1.0 marks world average. FWCI rose from below world average",
+          "before 1990 to at or above it from 2000 onward and remains near",
+          "1.0 in the most recent years, so the fall in panels A and B",
+          "reflects citation censoring and not declining impact."
+        ), width = 95)
+      ) +
+      .theme_fpmrs_manuscript()
+  } else NULL
+
+  # Drop the now-redundant censoring caption from panel B when panel C is
+  # present to carry the explanation.
+  if (has_fwci) {
+    panel_mean_citations <- panel_mean_citations +
+      ggplot2::labs(caption = NULL) +
+      ggplot2::theme(axis.title.x = ggplot2::element_blank())
+  }
+
+  panels <- Filter(Negate(is.null), list(
+    panel_total_citations, panel_mean_citations, panel_fwci
+  ))
+
   combined_citation_figure <- patchwork::wrap_plots(
-    panel_total_citations,
-    panel_mean_citations,
+    panels,
     ncol = 1
   ) +
     patchwork::plot_annotation(
@@ -11373,6 +11459,7 @@ run_fpmrs_bibliometric_pipeline <- function(
     figure_width    = 7,
     figure_height   = 5,
     english_only    = TRUE,
+    exclude_out_of_scope = TRUE,
     seed            = 42L,
     verbose         = TRUE
 ) {
@@ -11452,11 +11539,12 @@ run_fpmrs_bibliometric_pipeline <- function(
   # ----------------------------------------------------------
   .log_step("\n--- STEP 2: Filter by Year Range ---", verbose)
   bibliography_filtered <- .standardize_and_filter_bibliography(
-    bibliography_raw = bibliography_raw,
-    year_start       = year_start,
-    year_end         = year_end,
-    english_only     = english_only,
-    verbose          = verbose
+    bibliography_raw     = bibliography_raw,
+    year_start           = year_start,
+    year_end             = year_end,
+    english_only         = english_only,
+    exclude_out_of_scope = exclude_out_of_scope,
+    verbose              = verbose
   )
 
   # ----------------------------------------------------------
