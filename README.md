@@ -108,6 +108,29 @@ What the suite deliberately covers:
   the concentration index is low).
 - **Query stability** — the PubMed query defines the corpus, so its hash is
   pinned against a committed baseline.
+- **Scope exclusion** — records indexed for male lower urinary tract disease
+  with no female pelvic floor indexing are dropped, and the count is reported
+  as its own CONSORT row.
+
+### Scope exclusion
+
+The search deliberately includes unqualified terms (`"urinary
+incontinence"[Title/Abstract]`, `"lower urinary tract symptoms"`) so that
+pre-MeSH and loosely indexed female pelvic floor literature is still
+retrieved. The cost is that post-prostatectomy incontinence and benign
+prostatic disease come with it — `PROSTATECTOMY` and `PROSTATE CANCER` were
+reaching the top-20 keyword figure of a female pelvic medicine corpus.
+
+`.flag_out_of_scope_records()` drops a record when it carries male
+lower-urinary-tract indexing **and** no female pelvic floor indexing. Records
+carrying both are kept: they are typically comparative or mixed-sex studies
+that belong in the corpus.
+
+This is an explicit exclusion stage rather than a PubMed `NOT` clause, for two
+reasons. The "keep it if it also carries female pelvic floor indexing" rule
+cannot be expressed cleanly in a `NOT` clause, and an exclusion that appears as
+its own CONSORT row is auditable by a reviewer in a way a buried query term is
+not. Disable it with `exclude_out_of_scope = FALSE`.
 
 ## Manuscript
 

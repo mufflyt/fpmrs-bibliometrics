@@ -1,5 +1,5 @@
 ---
-title: "Fifty Years of Urogynecology and Reconstructive Pelvic Surgery Research: A Bibliometric Analysis of 49,355 Publications, 1975-2024"
+title: "Fifty Years of Urogynecology and Reconstructive Pelvic Surgery Research: A Bibliometric Analysis, 1975-2024"
 author:
   - Tyler Muffly, MD
 date: "`r format(Sys.Date(), '%d %B %Y')`"
@@ -56,9 +56,13 @@ fmt <- function(x) format(x, big.mark = ",", trim = TRUE)
 pv  <- function(p) paste0("P", .fmt_pvalue(p))
 
 consort <- consort_table("output/consort_flow.json")
-n_retrieved <- consort$Records[1]
-n_excl_year <- consort$Records[2]
-n_excl_lang <- consort$Records[4]
+# Read the stage counts by name: row positions shift whenever a stage is
+# added to the flow.
+fl <- jsonlite::fromJSON("output/consort_flow.json")
+n_retrieved  <- fl$stage_1_retrieved$n
+n_excl_year  <- fl$excluded_year$n
+n_excl_lang  <- fl$excluded_language$n
+n_excl_scope <- if (is.null(fl$excluded_scope)) 0L else fl$excluded_scope$n
 ```
 
 # Structured Abstract
@@ -151,6 +155,12 @@ journal was renamed in 2022, both *Female Pelvic Medicine and Reconstructive
 Surgery* and *Urogynecology* were included as journal terms. The complete
 query and its SHA-256 hash accompany the analysis code.
 
+Because the unqualified incontinence terms also retrieve male lower urinary
+tract literature, records indexed for prostate disease that carried no female
+pelvic floor indexing were excluded as out of scope; records carrying both
+were retained, as these are typically comparative or mixed-sex studies. This
+exclusion is reported as its own step in the record flow (Table 1).
+
 PubMed does not supply citation counts or structured affiliation countries.
 Records were therefore linked to OpenAlex by PubMed identifier to obtain
 citation counts and the first author's affiliation country.[@priem2022]
@@ -181,8 +191,10 @@ manuscript_table(consort, "Table 1. Record flow from search to analysis.")
 ## Publication volume and growth
 
 Of `r fmt(n_retrieved)` records retrieved, `r fmt(n_excl_year)` fell outside
-the study window and `r fmt(n_excl_lang)` were non-English, leaving
-`r fmt(n_docs)` publications for analysis (Table 1).
+the study window, `r fmt(n_excl_lang)` were non-English, and
+`r fmt(n_excl_scope)` were male lower urinary tract records with no female
+pelvic floor indexing, leaving `r fmt(n_docs)` publications for analysis
+(Table 1).
 
 Annual output rose from `r first_n` publications in `r first_yr` to
 `r fmt(last_n)` in `r last_yr`, a `r fold`-fold increase corresponding to a
@@ -288,11 +300,12 @@ authors from low-resource settings are concrete levers.
 
 ## Limitations
 
-Several limitations warrant emphasis. First, the search retrieves records
-containing pelvic floor terminology, and unqualified terms such as "urinary
-incontinence" also capture literature outside the female pelvic floor,
-including post-prostatectomy incontinence; some proportion of the corpus is
-therefore outside the subspecialty's scope. Second, citation counts and
+Several limitations warrant emphasis. First, the search uses unqualified
+terms such as "urinary incontinence" to capture loosely indexed and pre-MeSH
+literature, which also retrieves male lower urinary tract disease. We excluded
+`r fmt(n_excl_scope)` such records, but retained those additionally indexed
+for the female pelvic floor, so a small amount of residual misclassification
+in both directions is expected. Second, citation counts and
 affiliation countries derive from OpenAlex records matched by PubMed
 identifier, so unmatched records are absent from those analyses. Third, only
 the first author's country is available, so international collaboration rates
@@ -326,7 +339,7 @@ which is the most tractable target for deliberate change.
 
 - PubMed search, `r first_yr`-`r last_yr`, MeSH plus title/abstract terms covering both names.
 - Linked to OpenAlex by PMID for citations and first-author country.
-- `r fmt(n_retrieved)` retrieved, `r fmt(n_docs)` analyzed.
+- `r fmt(n_retrieved)` retrieved; `r fmt(n_excl_scope)` male lower-urinary-tract records excluded; `r fmt(n_docs)` analyzed.
 
 **Results**
 

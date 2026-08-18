@@ -858,13 +858,66 @@ make_eras <- function(year_start, year_end) {
   return(bibliography_standardized)
 }
 
+#' Male lower-urinary-tract indexing that puts a record out of scope
+#'
+#' The search deliberately includes unqualified terms such as
+#' "urinary incontinence"[Title/Abstract] and "lower urinary tract symptoms"
+#' so that pre-MeSH and loosely indexed female pelvic floor literature is
+#' still retrieved. The cost is that post-prostatectomy incontinence and
+#' benign prostatic disease -- a large male literature -- come with it, and
+#' surface in outputs such as the keyword figure as PROSTATECTOMY and
+#' PROSTATE CANCER.
+#' @noRd
+.OUT_OF_SCOPE_PATTERN <- paste(
+  "PROSTAT",                      # prostate, prostatic, prostatectomy, prostatitis
+  "BENIGN PROSTATIC HYPERPLASIA",
+  "TRANSURETHRAL RESECTION",
+  sep = "|"
+)
+
+#' Female pelvic floor indexing that keeps a record in scope
+#'
+#' A record carrying both prostate and female pelvic floor indexing is
+#' typically a comparative or mixed-sex study and belongs in the corpus, so
+#' the exclusion is not applied to it.
+#' @noRd
+.IN_SCOPE_PATTERN <- paste(
+  "PELVIC ORGAN PROLAPSE", "UTERINE PROLAPSE", "CYSTOCELE", "RECTOCELE",
+  "PELVIC FLOOR", "URINARY INCONTINENCE, STRESS", "SUBURETHRAL SLING",
+  "SACROCOLPOPEXY", "COLPORRHAPHY", "COLPOSUSPENSION", "VAGINAL PROLAPSE",
+  "UROGYNECOLOG",
+  sep = "|"
+)
+
+#' Drop records that are outside the female pelvic floor scope
+#'
+#' Applied as an explicit, reported exclusion stage rather than a PubMed NOT
+#' clause. Two reasons: the "keep it if it also carries female pelvic floor
+#' indexing" rule cannot be expressed cleanly in a NOT clause, and an
+#' exclusion that appears as its own CONSORT row is auditable by a reviewer
+#' in a way that a buried query term is not.
+#' @noRd
+.flag_out_of_scope_records <- function(bibliography) {
+  fld <- function(nm) {
+    if (nm %in% names(bibliography))
+      toupper(ifelse(is.na(bibliography[[nm]]), "", bibliography[[nm]]))
+    else
+      rep("", nrow(bibliography))
+  }
+  searchable <- paste(fld("MESH"), fld("TI"), fld("DE"))
+
+  grepl(.OUT_OF_SCOPE_PATTERN, searchable) &
+    !grepl(.IN_SCOPE_PATTERN, searchable)
+}
+
 #' @noRd
 .standardize_and_filter_bibliography <- function(
     bibliography_raw,
     year_start,
     year_end,
-    english_only = TRUE,
-    verbose      = TRUE
+    english_only          = TRUE,
+    exclude_out_of_scope  = TRUE,
+    verbose               = TRUE
 ) {
   assertthat::assert_that(is.data.frame(bibliography_raw))
   assertthat::assert_that(
@@ -991,6 +1044,27 @@ make_eras <- function(year_start, year_end) {
     bib_eng
   }
 
+  # ---- Scope filter ----
+  n_before_scope <- nrow(bibliography_filtered)
+  if (isTRUE(exclude_out_of_scope)) {
+    out_of_scope <- .flag_out_of_scope_records(bibliography_filtered)
+    n_out_of_scope <- sum(out_of_scope, na.rm = TRUE)
+    if (n_out_of_scope > 0L) {
+      .log_step(sprintf(
+        paste("[FILTER] Scope: removed %d male lower-urinary-tract records",
+              "(%.1f%%) with no female pelvic floor indexing."),
+        n_out_of_scope, n_out_of_scope / max(n_before_scope, 1L) * 100
+      ), verbose)
+    }
+    bibliography_filtered <- bibliography_filtered[!out_of_scope, , drop = FALSE]
+  } else {
+    n_out_of_scope <- 0L
+    .log_step(
+      "[FILTER] Scope: retaining out-of-scope records (exclude_out_of_scope = FALSE).",
+      verbose
+    )
+  }
+
   assertthat::assert_that(
     nrow(bibliography_filtered) > 0,
     msg = sprintf(
@@ -1012,9 +1086,10 @@ make_eras <- function(year_start, year_end) {
     n_unparseable_year  = n_unparseable,
     n_excluded_year     = n_outside_range + n_unparseable,
     n_after_year_filter = nrow(bibliography_year_filtered),
-    n_excluded_language = nrow(bibliography_year_filtered) -
-      nrow(bibliography_filtered),
-    n_after_lang_filter = nrow(bibliography_filtered)
+    n_excluded_language = nrow(bibliography_year_filtered) - n_before_scope,
+    n_after_lang_filter = n_before_scope,
+    n_excluded_scope    = n_out_of_scope,
+    n_after_scope_filter = nrow(bibliography_filtered)
   )
 
   return(bibliography_filtered)
@@ -8912,6 +8987,7 @@ compute_comparative_funding <- function(
     year_start,
     year_end,
     english_only,
+    n_excluded_scope = 0L,
     verbose = TRUE
 ) {
   flow <- list(
@@ -8925,6 +9001,11 @@ compute_comparative_funding <- function(
       label = if (english_only) "Excluded: non-English" else "Non-English retained"),
     stage_3_lang_filter = list(n = n_retrieved - n_excluded_year - n_excluded_language,
       label = "Records after language filter"),
+    excluded_scope      = list(n = n_excluded_scope,
+      label = "Excluded: male lower urinary tract, no female pelvic floor indexing"),
+    stage_3b_scope_filter = list(
+      n = n_retrieved - n_excluded_year - n_excluded_language - n_excluded_scope,
+      label = "Records after scope filter"),
     excluded_dedup      = list(n = n_excluded_dedup,
       label = "Excluded: duplicates (DOI/title-year)"),
     stage_4_final       = list(n = n_final,
@@ -8949,6 +9030,9 @@ compute_comparative_funding <- function(
       sprintf("  Non-English retained       : %d", n_excluded_language),
     sprintf("After language filter        : %d",
             n_retrieved - n_excluded_year - n_excluded_language),
+    sprintf("  - Excluded (out of scope)  : %d", n_excluded_scope),
+    sprintf("After scope filter           : %d",
+            n_retrieved - n_excluded_year - n_excluded_language - n_excluded_scope),
     sprintf("  - Excluded (duplicates)    : %d", n_excluded_dedup),
     paste(rep("-", 40L), collapse = ""),
     sprintf("INCLUDED IN ANALYSIS         : %d", n_final),
@@ -11396,6 +11480,11 @@ run_fpmrs_bibliometric_pipeline <- function(
     n_excluded_yr   <- .fc$n_excluded_year
     n_excluded_lang <- .fc$n_excluded_language
   }
+  # Explicit null check rather than %||%: that operator is defined locally
+  # inside generate_abstract_results_text(), and base R only gained it in
+  # 4.4, while CI also runs oldrel-1.
+  n_excluded_scope <- if (is.null(.fc) || is.null(.fc$n_excluded_scope))
+    0L else .fc$n_excluded_scope
   n_excluded_dedup  <- 0L  # logged inside .merge_bibliographies when both
   n_final           <- nrow(bibliography_filtered)
 
@@ -11427,6 +11516,7 @@ run_fpmrs_bibliometric_pipeline <- function(
     year_start           = year_start,
     year_end             = year_end,
     english_only         = english_only,
+    n_excluded_scope     = n_excluded_scope,
     verbose              = verbose
   )
 
