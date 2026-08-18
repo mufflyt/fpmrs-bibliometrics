@@ -29,3 +29,11 @@ renv/local/
 ci-figures/
 test-results.xml
 tests/testthat/_snaps/
+
+# Rendered manuscript
+manuscript/*.html
+manuscript/*.docx
+manuscript/*.pdf
+manuscript/*_files/
+manuscript/*.knit.md
+manuscript/*.utf8.md

@@ -1,0 +1,263 @@
+---
+title: "Urogynecology and Reconstructive Pelvic Surgery (URPS) Literature, 1975–2024"
+subtitle: "A longitudinal bibliometric analysis"
+author: "Tyler Muffly, MD"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+params:
+  results_rds: "output/pipeline_result.rds"
+  refresh: FALSE
+  year_start: 1975
+  year_end: 2024
+  focal: "URPS"
+  top_n: 10
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    number_sections: true
+    fig_caption: true
+    df_print: kable
+    theme: readable
+  word_document:
+    toc: true
+    fig_caption: true
+    reference_docx: null
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo       = FALSE,
+  message    = FALSE,
+  warning    = FALSE,
+  fig.align  = "center",
+  fig.width  = 7.5,
+  fig.height = 5,
+  dpi        = 200,
+  out.width  = "100%"
+)
+
+# knitr starts in the Rmd's folder; the pipeline and its output/ live one
+# level up. Every chunk after this one therefore runs at the repo root, so
+# all paths below (including params$results_rds) are repo-root-relative.
+knitr::opts_knit$set(root.dir = normalizePath(".."))
+```
+
+```{r load-pipeline, include=FALSE}
+suppressWarnings(suppressMessages(
+  sys.source("R/fpmrs_bibliometrics_pipeline.R", envir = globalenv())
+))
+source("manuscript/_helpers.R", local = knitr::knit_global())
+```
+
+```{r analysis, include=FALSE}
+res <- load_or_run_analysis(
+  results_rds = params$results_rds,
+  refresh     = params$refresh,
+  year_start  = as.integer(params$year_start),
+  year_end    = as.integer(params$year_end)
+)
+
+focal_row <- build_focal_row(res, focal = params$focal)
+
+# Equity is recomputed here rather than read from the cached object: a cache
+# written before the ISO-2 income-tier fix carries the old, wrong shares.
+equity <- .compute_equity_metrics(res$bibliography, verbose = FALSE)
+
+abstract <- generate_abstract_results_text(
+  comparison_summary_table  = focal_row,
+  focal_subspecialty        = params$focal,
+  focal_mk_trend            = res$mk_trend,
+  focal_equity_metrics      = equity,
+  focal_institution_metrics = res$institution_metrics,
+  focal_keyword_trends      = res$keyword_trends,
+  year_start                = as.integer(params$year_start),
+  year_end                  = as.integer(params$year_end),
+  verbose                   = FALSE
+)
+
+has_comparators <- comparative_sentences_available(focal_row)
+
+n_docs  <- nrow(res$bibliography)
+n_years <- length(unique(res$annual_trends$publication_year))
+```
+
+```{r caveat, results="asis"}
+if (!has_comparators) {
+  cat(
+    "> **Single-corpus run.** Only the ", params$focal, " corpus is loaded, so ",
+    "every rank is 1 by construction and the comparative sentences ",
+    "(cohort ranking, urology contrast, evidence-quality benchmarking) are ",
+    "either absent or trivially true. Run the pipeline for the comparator ",
+    "subspecialties and pass the results through ",
+    "`run_subspecialty_comparison()` to populate them.\n\n",
+    sep = ""
+  )
+}
+```
+
+# Abstract
+
+**`r abstract$title`**
+
+**Introduction.** `r abstract$introduction`
+
+**Methods.** `r abstract$methods`
+
+**Results.** `r paste(na.omit(unlist(abstract[c("corpus","citations","growth","mk_trend","geography","institution","output","keywords","disruption","evidence_quality","equity","collaboration","urology")])), collapse = " ")`
+
+**Conclusion.** `r abstract$conclusion`
+
+```{r word-count, results="asis"}
+body <- paste(
+  na.omit(unlist(abstract[setdiff(names(abstract), c("title", "formatted"))])),
+  collapse = " "
+)
+cat(sprintf(
+  "\n*Abstract body: %d words.*\n",
+  lengths(gregexpr("\\S+", body))
+))
+```
+
+# Methods
+
+`r abstract$methods`
+
+## Search strategy
+
+The full PubMed query is reproduced in the [Reproducibility] appendix. Its
+SHA-256 hash is recorded with every run so a published figure can be traced
+to the exact search that produced it.
+
+## Record flow
+
+```{r tbl-consort}
+consort <- consort_table(file.path("output", "consort_flow.json"))
+if (!is.null(consort)) {
+  manuscript_table(consort, "Table 1. CONSORT-style record flow.")
+}
+```
+
+# Results
+
+## Publication volume
+
+`r abstract$corpus` `r abstract$growth`
+
+`r abstract$mk_trend`
+
+```{r fig-annual, fig.cap="Figure 1. Annual URPS publication volume, 1975-2024, with LOESS trend and 95% confidence interval."}
+plot_annual_publications(
+  res$annual_trends,
+  year_start = as.integer(params$year_start),
+  year_end   = as.integer(params$year_end),
+  verbose    = FALSE
+)
+```
+
+## Citation impact
+
+`r abstract$citations`
+
+```{r fig-citations, fig.height=6, fig.cap="Figure 2. Citation impact over time. Both panels index citations to the year of publication; the post-2000s decline is a censoring artifact of shorter citation windows, not falling impact."}
+plot_citation_trends(
+  res$annual_trends,
+  year_start = as.integer(params$year_start),
+  year_end   = as.integer(params$year_end),
+  verbose    = FALSE
+)
+```
+
+## Journals
+
+`r abstract$output`
+
+```{r fig-journals, fig.height=6, fig.cap="Figure 3. Journal dominance in URPS literature over time (top 8 by total volume)."}
+plot_journal_trends(res$journal_trends, top_n_journals = 8L, verbose = FALSE)
+```
+
+```{r tbl-journals}
+manuscript_table(
+  journal_table(res, top_n = params$top_n),
+  sprintf("Table 2. Top %d journals by total citations.", params$top_n)
+)
+```
+
+## Authors
+
+```{r tbl-authors}
+manuscript_table(
+  author_table(res, top_n = params$top_n),
+  sprintf("Table 3. Top %d authors by publication count.", params$top_n)
+)
+```
+
+## Geography and equity
+
+`r abstract$geography`
+
+`r abstract$equity`
+
+```{r fig-countries, fig.height=6, fig.cap="Figure 4. Geographic distribution of URPS publications (top 10 first-author countries)."}
+plot_country_contributions(res$country_trends, top_n_countries = 10L, verbose = FALSE)
+```
+
+```{r tbl-countries}
+manuscript_table(
+  country_table(res, top_n = 15L),
+  "Table 4. Top 15 first-author countries with World Bank income tier."
+)
+```
+
+```{r tbl-equity}
+manuscript_table(
+  equity_table(equity),
+  "Table 5. Distribution of publications by World Bank income group."
+)
+```
+
+## Research themes
+
+`r abstract$keywords`
+
+```{r fig-keywords, fig.height=6, fig.cap="Figure 5. Keyword evolution over time (top 20 author keywords). Author keywords are sparsely indexed in PubMed before ~2000, so early blank cells reflect missing metadata rather than absent topics."}
+plot_keyword_evolution(res$keyword_trends, top_n_keywords = 20L, verbose = FALSE)
+```
+
+## Collaboration
+
+`r abstract$collaboration`
+
+# Conclusion
+
+`r abstract$conclusion`
+
+# Reproducibility
+
+```{r repro, results="asis"}
+qh <- file.path("output", "query_hash.txt")
+if (file.exists(qh)) {
+  cat("**Query hash**\n\n```\n", paste(readLines(qh), collapse = "\n"), "\n```\n\n", sep = "")
+}
+cat("**PubMed query**\n\n```\n",
+    paste(strwrap(get_subspecialty_pubmed_query("fpmrs"), width = 76), collapse = "\n"),
+    "\n```\n\n", sep = "")
+cat(sprintf(
+  "Corpus: %s records across %d publication years (%d-%d).\n\n",
+  format(n_docs, big.mark = ","), n_years,
+  as.integer(params$year_start), as.integer(params$year_end)
+))
+```
+
+```{r session}
+si <- sessionInfo()
+cat("R version:", si$R.version$version.string, "\n")
+cat("Platform :", si$platform, "\n")
+key <- c("dplyr", "ggplot2", "stringr", "tibble", "purrr", "scales", "jsonlite")
+vers <- vapply(key, function(p) {
+  if (requireNamespace(p, quietly = TRUE))
+    as.character(utils::packageVersion(p)) else NA_character_
+}, character(1L))
+cat("\nKey packages:\n")
+print(data.frame(package = key, version = unname(vers), row.names = NULL))
+```

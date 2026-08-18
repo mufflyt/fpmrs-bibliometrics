@@ -95,6 +95,44 @@ What the suite deliberately covers:
 - **Query stability** — the PubMed query defines the corpus, so its hash is
   pinned against a committed baseline.
 
+## Manuscript
+
+`manuscript/urps_bibliometrics_manuscript.Rmd` renders the whole
+manuscript — generated abstract, figures, tables, and results prose — from
+the analysis object.
+
+```sh
+Rscript manuscript/render.R            # HTML
+Rscript manuscript/render.R word       # Word .docx
+Rscript manuscript/render.R both
+Rscript manuscript/render.R both --refresh   # re-run the pipeline first
+```
+
+Without `--refresh` it reuses the cached analysis at
+`output/pipeline_result.rds`. That file is gitignored, so a fresh clone runs
+the full pipeline (PubMed fetch, ~30 min) on the first render.
+
+Parameters (`params:` in the YAML header, overridable via
+`rmarkdown::render(params = ...)`):
+
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `results_rds` | `output/pipeline_result.rds` | Cached analysis object |
+| `refresh` | `FALSE` | Re-run the pipeline instead of loading the cache |
+| `year_start` / `year_end` | 1975 / 2024 | Analysis window |
+| `focal` | `URPS` | Focal subspecialty |
+| `top_n` | 10 | Rows in the journal and author tables |
+
+Two things worth knowing:
+
+- **Equity is recomputed at knit time** rather than read from the cached
+  object, so a cache written before the ISO-2 income-tier fix cannot carry
+  stale income shares into the manuscript.
+- **With only one corpus loaded, every rank is 1 by construction.** The
+  document prints a banner saying so. The comparative sentences (cohort
+  ranking, urology contrast, evidence-quality benchmarking) need the
+  comparator subspecialties run through `run_subspecialty_comparison()`.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push and pull request:
