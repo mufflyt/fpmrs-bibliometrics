@@ -74,11 +74,16 @@ country_table <- function(res, top_n = 15L) {
   co <- co[!is.na(co$country) & !toupper(co$country) %in% c("NA", "NULL") &
              nzchar(co$country), ]
   nm <- .normalize_country_string(toupper(co$country))
+  # Acronym country names must not be title-cased ("Usa", "Uae").
+  display <- ifelse(
+    nm %in% c("USA", "UAE"), nm, .title_case_journal(nm)
+  )
+  # No Code column: country_summary already carries normalised names rather
+  # than ISO-2 codes, so it would just repeat the Country column.
   data.frame(
-    Country      = .title_case_journal(nm),
-    Code         = co$country,
+    Country       = display,
     `Income tier` = .wb_income_tier(nm),
-    Publications = co$publication_count,
+    Publications  = co$publication_count,
     `% of corpus` = round(co$pct_of_total, 1),
     check.names   = FALSE,
     stringsAsFactors = FALSE
